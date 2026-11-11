@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.2.4';
+  const APP_VERSION = '2.3.0';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -189,7 +189,7 @@
     if (kind === 'session') {
       return { date: r.date, weekday: WD[parseDay(r.date).getDay()], start: fmtTime(r.start), end: fmtTime(r.end), subject: r.subject || '', goal: r.goalTitle || '', plan: r.plan || '', planMin: r.planMin || 0,
         studyMin: Number(mins(r.studyMs)), breakMin: Number(mins(r.breakMs || 0)), awayMin: Number(mins(r.awayMs || 0)), camAwayMin: Number(mins(r.camAwayMs || 0)), drowsy: r.drowsyCount || 0,
-        achieve: r.achieve, goalProgress: r.goalProgress == null ? '' : r.goalProgress, focus: r.focus, distractors: (r.distractors || []).join(' / '), phase: PHASE[r.phase] || '' };
+        achieve: r.achieve == null ? '' : r.achieve, goalProgress: r.goalProgress == null ? '' : r.goalProgress, focus: r.focus, distractors: (r.distractors || []).join(' / '), phase: PHASE[r.phase] || '' };
     }
     if (kind === 'goal') return { week: r.week, subject: r.subject || '', title: r.title, targetMin: r.targetMin || '', progress: r.progress, status: GOAL_STATUS[goalStatus(r)] };
     return { date: r.date, type: r.type === 'mock' ? '모의고사' : '내신', name: r.name, scores: scoresText(r.scores) };
@@ -353,8 +353,9 @@
           if (g) { g.progress = clampPct(g.progress + achieve * (0.2 + rnd() * 0.15)); if (g.progress >= 100) { g.progress = 100; g.status = 'done'; g.doneAt = end; } g.updatedAt = end; }
           const camOn = late && rnd() < 0.7;
           const awayMs = dist.includes('휴대폰') ? Math.round((1 + rnd() * 5) * 60000) : 0;
-          D.sessions.push({ id: id('s'), goalId: g ? g.id : null, goalTitle: g ? g.title : '', subjectId: byName[nm].id, subject: nm, plan: pick(BANK[nm].plans), planMin, date: key, start, end,
-            studyMs: grossMs, grossMs, breakMs, awayMs, awayCount: awayMs ? 1 : 0, awayExcluded: false, achieve, goalBefore: before, goalProgress: g ? g.progress : null, focus, distractors: dist, memo: '', phase: 'normal',
+          const withPlan = !g || rnd() < 0.6;
+          D.sessions.push({ id: id('s'), goalId: g ? g.id : null, goalTitle: g ? g.title : '', subjectId: byName[nm].id, subject: nm, plan: withPlan ? pick(BANK[nm].plans) : '', planMin, date: key, start, end,
+            studyMs: grossMs, grossMs, breakMs, awayMs, awayCount: awayMs ? 1 : 0, awayExcluded: false, achieve: withPlan ? achieve : null, goalBefore: before, goalProgress: g ? g.progress : null, focus, distractors: dist, memo: '', phase: 'normal',
             camUsed: camOn, camAwayMs: camOn ? Math.floor(rnd() * 3) * 60000 : 0, drowsyCount: camOn && dist.includes('졸음') ? 1 + Math.floor(rnd() * 2) : 0, camAwayExcluded: false, updatedAt: end });
           cursor = new Date(end + 10 * 60000);
         }
@@ -448,6 +449,8 @@
     const elapsed = cur ? daysBetween(dayKey(w0), dayKey(today)) + 1 : 7;
     return { mode: 'week', start: w0, end: w1, a: dayKey(w0), b: dayKey(w1), label: weekLabel(w0), elapsed, prevA: dayKey(addDays(w0, -7)), prevB: dayKey(addDays(w0, -7 + elapsed - 1)), than: elapsed < 7 ? '지난주 같은 기간' : '지난주', cur, unit: '주' };
   }
+  const perHour = (gain, ms) => (ms >= 600000 ? gain / (ms / 3600e3) : null);
+  const gainTxt = (g) => `${g >= 0 ? '+' : ''}${Math.round(g)}%p`;
   function rangeStats(sessions, a, b, look) {
     const ss = sessions.filter((s) => s.date >= a && s.date <= b);
     const days = {}; const subj = {}; const hours = {}; const dc = {}; const acc = {};
@@ -455,8 +458,9 @@
       const nm = look.name(s);
       const d = days[s.date] || (days[s.date] = { ms: 0, n: 0, subj: {} });
       d.ms += s.studyMs; d.n++; d.subj[nm] = (d.subj[nm] || 0) + s.studyMs;
-      const x = subj[nm] || (subj[nm] = { name: nm, slot: look.slot(nm), ms: 0, n: 0, ach: [], focus: [] });
+      const x = subj[nm] || (subj[nm] = { name: nm, slot: look.slot(nm), ms: 0, n: 0, ach: [], focus: [], gain: 0, gainMs: 0 });
       x.ms += s.studyMs; x.n++; if (s.achieve != null) x.ach.push(s.achieve); if (s.focus) x.focus.push(s.focus);
+      if (s.goalBefore != null && s.goalProgress != null) { x.gain += s.goalProgress - s.goalBefore; x.gainMs += s.studyMs; }
       // spread study time over the clock hours the session covered; focus is counted at the start hour
       const end = Math.max(s.start, Number(s.end) || s.start); const span = Math.max(1, end - s.start);
       let t = s.start;
@@ -484,7 +488,8 @@
       total: sum(ss.map((s) => s.studyMs)), gross: sum(ss.map((s) => s.grossMs || s.studyMs)), away: sum(ss.map((s) => s.awayMs || 0)),
       subjects: Object.values(subj).map((x) => Object.assign(x, { avgAch: avg(x.ach), avgFocus: avg(x.focus) })).sort((p, q) => q.ms - p.ms),
       studyDays: Object.values(days).filter((d) => d.ms > 0).length,
-      avgAch: avg(achs), avgFocus, hours: hourList,
+      avgAch: avg(achs), nAch: achs.length, avgFocus, hours: hourList,
+      gain: sum(Object.values(subj).map((x) => x.gain)), gainMs: sum(Object.values(subj).map((x) => x.gainMs)),
       distractors: Object.entries(dc).map(([name, count]) => ({ name, count })).sort((p, q) => q.count - p.count),
       buckets: [['100% (다 끝냄)', (v) => v >= 100], ['75~95%', (v) => v >= 75 && v < 100], ['50~70%', (v) => v >= 50 && v < 75], ['45% 이하', (v) => v < 50]].map(([label, f]) => ({ label, n: achs.filter(f).length })),
       accuracy: Object.entries(acc).map(([name, arr]) => ({ name, slot: look.slot(name), avg: avg(arr), n: arr.length })).sort((p, q) => q.avg - p.avg),
@@ -500,7 +505,7 @@
     if (top && top.count >= 2 && top.count / R.sessions.length >= 0.25 && TIPS[top.name]) out.push({ title: TIPS[top.name].title, body: TIPS[top.name].body(R), basis: `'${top.name}'${iga(top.name)} 공부 ${R.sessions.length}번 중 ${top.count}번 체크됐어요.` });
     const worst = R.accuracy.filter((x) => x.n >= 3 && x.avg >= 0.3)[0];
     if (worst) out.push({ title: `${worst.name} 예상 시간 늘리기`, body: `${worst.name} 공부는 평소 예상의 ${(1 + worst.avg).toFixed(1)}배로 잡아 보세요. 계획이 현실적이어야 끝까지 지킬 수 있어요.`, basis: `거의 다 끝낸 ${worst.name} 공부 ${worst.n}번이 예상보다 평균 ${pct(worst.avg)} 더 걸렸어요.` });
-    if (R.sessions.length >= 5 && R.avgAch != null && R.avgAch < 60) out.push({ title: '할 일 크기 줄이기', body: '한 번에 끝낼 수 있는 만큼만 "이번에 할 일"로 정해 보세요. 다 끝내는 경험이 쌓이면 계획을 지키는 습관이 생겨요.', basis: `이번 ${P.unit} 할 일 달성도가 평균 ${Math.round(R.avgAch)}%예요.` });
+    if (R.nAch >= 5 && R.avgAch != null && R.avgAch < 60) out.push({ title: '할 일 크기 줄이기', body: '한 번에 끝낼 수 있는 만큼만 "이번에 할 일"로 정해 보세요. 다 끝내는 경험이 쌓이면 계획을 지키는 습관이 생겨요.', basis: `이번 ${P.unit} 할 일 달성도가 평균 ${Math.round(R.avgAch)}%예요.` });
     if (P.mode === 'week' && goals.length && P.elapsed >= 5) {
       const ap = avg(goals.map((g) => g.progress));
       if (ap < 50) out.push({ title: '주간 목표 크기 조정하기', body: '다음 주에는 목표 수를 줄이거나 범위를 좁혀 보세요. 끝낼 수 있는 목표 2~3개가 많은 목표보다 나아요.', basis: `주의 ${P.elapsed}일째인데 주간 목표 평균 진행률이 ${Math.round(ap)}%예요.` });
@@ -785,13 +790,14 @@
     const r = D.running; const nm = goalName(D, g); const slot = slotOfName(D, nm);
     const ms = goalMs(D, g.id); const ss = goalSessions(D, g.id); const last = ss[ss.length - 1];
     const meta = [`이번 주 ${fmtHM(ms)}${g.targetMin ? ` / 목표 ${fmtHM(g.targetMin * 60000)}` : ''}`, `${ss.length}번 공부`];
-    if (last) meta.push(`최근: ${last.plan} ${last.achieve}%`);
+    if (last) meta.push(last.plan ? `최근: ${last.plan}${last.achieve != null ? ` ${last.achieve}%` : ''}` : last.goalBefore != null && last.goalProgress != null ? `최근 공부 ${gainTxt(last.goalProgress - last.goalBefore)}` : '');
     const isRun = r && r.goalId === g.id;
+    const metaTxt = meta.filter(Boolean);
     return `<article class="gcard" aria-label="${esc(g.title)}">
       <div class="gc-head">${subjTag(nm, slot)}<span class="gc-pct">${g.progress}%</span></div>
       <p class="gc-title">${esc(g.title)}</p>
       <div class="gc-bar" role="progressbar" aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${g.progress}"><span style="width:${g.progress}%;--c:${colorOf(slot)}"></span></div>
-      <p class="gc-meta">${esc(meta.join(' · '))}</p>
+      <p class="gc-meta">${esc(metaTxt.join(' · '))}</p>
       <div class="gc-act">${isRun ? '<button class="btn primary" data-act="open-timer">공부 중 · 타이머 보기</button>' : `<button class="btn primary" data-act="start" data-id="${g.id}" ${r ? 'disabled' : ''}>공부 시작</button>`}
         <button class="btn" data-act="goal-edit" data-id="${g.id}" aria-label="${esc(g.title)} 고치기">고치기</button></div>
     </article>`;
@@ -833,7 +839,7 @@
       <section class="section" aria-labelledby="wgH">
         <div class="section-head"><div><h2 id="wgH">이번 주 목표</h2><span class="muted">${weekLabel(ws)}</span></div>${goals.length ? '<button class="btn small" data-act="goal-new">+ 목표 추가</button>' : ''}</div>
         ${!goals.length ? `<div class="card"><p><b>이번 주에 끝낼 목표를 2~4개 정해 보세요.</b></p>
-            <p class="muted small-text">예: '미적분 2단원 개념과 기본 문제 끝내기', '영단어 Day 11~15 외우기'. 목표를 골라 공부를 시작하고, 끝낼 때 이번에 할 일을 몇 % 했는지와 목표 진행률을 5% 단위로 기록해요.</p>
+            <p class="muted small-text">예: '미적분 2단원 개념과 기본 문제 끝내기', '영단어 Day 11~15 외우기'. 목표를 골라 공부를 시작하고, 끝낼 때 목표가 몇 %까지 왔는지 5% 단위로 기록해요. 일주일 안에 끝낼 수 있는 작은 목표일수록 진행률이 잘 보여요.</p>
             <div><button class="btn primary" data-act="goal-new">목표 추가하기</button></div></div>` : ''}
         ${active.map((g) => goalCardHTML(D, g)).join('')}
         ${goals.length && !active.length ? '<div class="coach"><span>이번 주 목표를 모두 달성했어요. 새 목표를 더 추가해 보세요.</span></div>' : ''}
@@ -940,7 +946,7 @@
     return `<li class="sess"><div class="sess-time">${fmtTime(s.start)}–${fmtTime(s.end)}</div><div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${subjTag(nm, look.slot(nm))}<b style="font-weight:600">${esc(s.plan || s.goalTitle || '')}</b>${self ? `<button class="icon-btn" style="margin-left:auto" data-act="sess-del" data-id="${s.id}" aria-label="${fmtTime(s.start)} 공부 기록 삭제">×</button>` : ''}</div>
       ${s.goalTitle ? `<div class="sess-sub">주간 목표: ${esc(s.goalTitle)}</div>` : ''}
-      <div class="sess-sub">순공 ${fmtHM(s.studyMs)} · 할 일 ${s.achieve == null ? '–' : s.achieve + '%'} · 집중 ${s.focus || '–'}/5${gp}${(s.distractors || []).length ? ' · ' + esc(s.distractors.join(', ')) : ''}${s.awayMs ? ` · 이탈 ${fmtDur(s.awayMs)}` : ''}${s.drowsyCount ? ` · 졸음 ${s.drowsyCount}회` : ''}</div>
+      <div class="sess-sub">순공 ${fmtHM(s.studyMs)}${s.achieve == null ? '' : ` · 할 일 ${s.achieve}%`} · 집중 ${s.focus || '–'}/5${gp}${(s.distractors || []).length ? ' · ' + esc(s.distractors.join(', ')) : ''}${s.awayMs ? ` · 이탈 ${fmtDur(s.awayMs)}` : ''}${s.drowsyCount ? ` · 졸음 ${s.drowsyCount}회` : ''}</div>
       ${self && s.memo ? `<div class="sess-sub">메모: ${esc(s.memo)}</div>` : ''}</div></li>`;
   }
   function fmtHMS(ms) { const t = Math.max(0, Math.round(ms / 1000)); return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`; }
@@ -957,8 +963,8 @@
     ss.forEach((x) => { const nm = look.name(x); let g = groups.find((y) => y.name === nm); if (!g) groups.push(g = { name: nm, slot: look.slot(nm), ms: 0, items: [] }); g.ms += x.studyMs; g.items.push(x); });
     const mark = (a) => (a == null ? '·' : a >= 100 ? '○' : a >= 50 ? '△' : '×');
     const list = groups.map((g) => `<div class="pl-group"><div class="pl-subj"><i style="--c:${colorOf(g.slot)}"></i><b>${esc(g.name)}</b><span>${fmtHMS(g.ms)}</span></div>
-      <ul>${g.items.map((x) => `<li class="pl-task"><span class="pl-mark" aria-label="달성도 ${x.achieve}%">${mark(x.achieve)}</span><div class="pl-text">
-        <span class="${x.achieve >= 100 ? 'done' : ''}">${esc(x.plan || x.goalTitle || '공부')}</span> <span class="pl-pct">${x.achieve == null ? '' : x.achieve + '%'}</span>
+      <ul>${g.items.map((x) => `<li class="pl-task"><span class="pl-mark" aria-label="${x.achieve == null ? '할 일 없음' : `할 일 ${x.achieve}%`}">${mark(x.achieve)}</span><div class="pl-text">
+        <span class="${x.achieve >= 100 ? 'done' : ''}">${esc(x.plan || x.goalTitle || '공부')}</span> <span class="pl-pct">${x.achieve == null ? '' : `할 일 ${x.achieve}%`}${x.goalBefore != null && x.goalProgress != null ? `${x.achieve == null ? '' : ' · '}목표 ${x.goalBefore}→${x.goalProgress}%` : ''}</span>
         <span class="pl-sub">${fmtTime(x.start)}–${fmtTime(x.end)} · ${fmtHM(x.studyMs)} · 집중 ${x.focus || '–'}${(x.distractors || []).length ? ' · ' + esc(x.distractors.join(', ')) : ''}</span>
         ${self && x.memo ? `<span class="pl-sub">메모: ${esc(x.memo)}</span>` : ''}</div>
         ${self ? `<button class="icon-btn" data-act="sess-del" data-id="${x.id}" aria-label="${fmtTime(x.start)} 공부 기록 삭제">×</button>` : ''}</li>`).join('')}</ul></div>`).join('');
@@ -978,7 +984,7 @@
     }
     return `<div class="planner" aria-live="polite">${head}
       <div class="pl-body"><div class="pl-list">${list}</div><div class="pl-grid" role="img" aria-label="${fmtDateLong(day)} 공부 시간표">${rows.join('')}</div></div>
-      <p class="pl-note">○ 다 끝냄 · △ 50~95% · × 50% 미만 · 시간표는 공부를 시작해서 끝낼 때까지(휴식 포함)를 10분 칸에 칠했어요.</p></div>${go}`;
+      <p class="pl-note">할 일 ○ 다 끝냄 · △ 50~95% · × 50% 미만 · 시간표는 공부를 시작해서 끝낼 때까지(휴식 포함)를 10분 칸에 칠했어요.</p></div>${go}`;
   }
   function level(ms) { const m = ms / 60000; return m <= 0 ? 0 : m < 60 ? 1 : m < 120 ? 2 : m < 180 ? 3 : 4; }
   function calendarHTML(P, R, sel) {
@@ -999,7 +1005,7 @@
     return `<section class="card" aria-labelledby="sjH"><div class="card-head"><h2 id="sjH">과목별</h2><span class="muted small-text">공부 ${R.sessions.length}번</span></div>
       <div class="rows">${R.subjects.map((x) => `<div class="srow"><div class="srow-top">${subjTag(x.name, x.slot)}<span class="val">${fmtHM(x.ms)} · ${pct(R.total ? x.ms / R.total : 0)}</span></div>
         <div class="hbar thin"><i style="width:${(x.ms / max) * 100}%;--c:${colorOf(x.slot)}"></i></div>
-        <div class="srow-sub">${x.n}번 · 할 일 달성도 ${x.avgAch == null ? '–' : Math.round(x.avgAch) + '%'} · 집중 ${x.avgFocus == null ? '–' : x.avgFocus.toFixed(1)}</div></div>`).join('')}</div></section>`;
+        <div class="srow-sub">${x.n}번 · 목표 진행 ${x.gainMs ? gainTxt(x.gain) : '–'}${perHour(x.gain, x.gainMs) != null ? ` (1시간당 ${gainTxt(perHour(x.gain, x.gainMs))})` : ''}${x.avgAch == null ? '' : ` · 할 일 ${Math.round(x.avgAch)}%`} · 집중 ${x.avgFocus == null ? '–' : x.avgFocus.toFixed(1)}</div></div>`).join('')}</div></section>`;
   }
   function hoursCardHTML(R) {
     if (!R.hours.length) return '';
@@ -1011,7 +1017,7 @@
   function bucketsCardHTML(R) {
     const n = sum(R.buckets.map((b) => b.n)); if (!n) return '';
     const max = Math.max(...R.buckets.map((b) => b.n), 1);
-    return `<section class="card" aria-labelledby="bkH"><div class="card-head"><h2 id="bkH">할 일 달성도 분포</h2><span class="muted small-text">끝낼 때 기록한 값 · ${n}번</span></div>
+    return `<section class="card" aria-labelledby="bkH"><div class="card-head"><h2 id="bkH">할 일 달성도</h2><span class="muted small-text">할 일을 쓴 공부 ${n}번 · 평균 ${Math.round(R.avgAch)}%</span></div>
       <div class="rows">${R.buckets.map((b) => `<div class="hrow" style="grid-template-columns:7.5em minmax(0,1fr) auto"><span>${b.label}</span><div class="hbar"><i style="width:${(b.n / max) * 100}%"></i></div><span class="val">${b.n}번 (${pct(b.n / n)})</span></div>`).join('')}</div></section>`;
   }
   function accuracyCardHTML(R) {
@@ -1052,7 +1058,7 @@
       const dTiles = `<div class="tiles">
         <div class="tile"><span class="label">순공 시간</span><span class="value">${fmtHM(R.total)}</span>${deltaHTML(R.total, hasPrev ? prev.total : null, 'ms', P.than)}</div>
         <div class="tile"><span class="label">공부 횟수</span><span class="value">${R.sessions.length}<small>번</small></span><span class="delta">하루 목표 ${fmtHM(D.meta.dailyGoalMin * 60000)}의 ${pct(R.total / (D.meta.dailyGoalMin * 60000))}</span></div>
-        <div class="tile"><span class="label">할 일 달성도</span><span class="value">${R.avgAch == null ? '–' : Math.round(R.avgAch) + '%'}</span>${deltaHTML(R.avgAch, hasPrev ? prev.avgAch : null, 'pt', P.than)}</div>
+        <div class="tile"><span class="label">목표 진행</span><span class="value">${R.gainMs ? gainTxt(R.gain) : '–'}</span><span class="delta">${perHour(R.gain, R.gainMs) != null ? `1시간당 ${gainTxt(perHour(R.gain, R.gainMs))}` : '주간 목표로 한 공부 없음'}</span></div>
         <div class="tile"><span class="label">평균 집중도</span><span class="value">${R.avgFocus == null ? '–' : R.avgFocus.toFixed(1)} <small>/ 5</small></span>${deltaHTML(R.avgFocus, hasPrev ? prev.avgFocus : null, 'focus', P.than)}</div>
       </div>`;
       return `${nav}${dTiles}<div class="cards"><section class="card wide" aria-labelledby="dyH"><div class="card-head"><h2 id="dyH">하루 기록</h2>${st.offset < 0 ? `<button class="btn ghost small" data-act="st-today">오늘로</button>` : ''}</div>${dayDetailHTML(D, P.a, self)}</section>${R.sessions.length ? subjectsCardHTML(R) + hoursCardHTML(R) + distractorsCardHTML(R) + camCardHTML(R) : ''}</div>`;
@@ -1065,7 +1071,7 @@
     const tiles = `<div class="tiles">
       <div class="tile"><span class="label">순공 시간</span><span class="value">${fmtHM(R.total)}</span>${deltaHTML(R.total, hasPrev ? prev.total : null, 'ms', P.than)}</div>
       <div class="tile"><span class="label">공부한 날</span><span class="value">${R.studyDays}일 <small>/ ${P.elapsed}일</small></span><span class="delta">공부한 날 평균 ${fmtHM(R.studyDays ? R.total / R.studyDays : 0)}</span></div>
-      <div class="tile"><span class="label">할 일 달성도</span><span class="value">${R.avgAch == null ? '–' : Math.round(R.avgAch) + '%'}</span>${deltaHTML(R.avgAch, hasPrev ? prev.avgAch : null, 'pt', P.than)}</div>
+      <div class="tile"><span class="label">목표 진행</span><span class="value">${R.gainMs ? gainTxt(R.gain) : '–'}</span><span class="delta">${perHour(R.gain, R.gainMs) != null ? `1시간당 ${gainTxt(perHour(R.gain, R.gainMs))}` : '주간 목표로 한 공부 없음'}</span></div>
       <div class="tile"><span class="label">주간 목표 달성</span><span class="value">${goals.length ? `${gDone} <small>/ ${goals.length}개</small>` : '–'}</span><span class="delta">${goals.length ? `평균 진행률 ${Math.round(avg(goals.map((g) => g.progress)))}%` : '세운 목표 없음'}</span></div>
       <div class="tile"><span class="label">평균 집중도</span><span class="value">${R.avgFocus == null ? '–' : R.avgFocus.toFixed(1)} <small>/ 5</small></span>${deltaHTML(R.avgFocus, hasPrev ? prev.avgFocus : null, 'focus', P.than)}</div>
       <div class="tile"><span class="label">앱 이탈 비율</span><span class="value">${pct(awayRatio)}</span>${deltaHTML(awayRatio, prevAway, 'away', P.than)}</div>
@@ -1113,7 +1119,7 @@
     const who = mode === 'student' ? ` · ${auth.user.name}` : '';
     const lines = [`[야자 관리실 ${P.mode === 'week' ? '주간' : '월간'} 요약] ${P.label}${who}`,
       `순공 시간: ${fmtHM(R.total)} (공부한 날 ${R.studyDays}일)`,
-      `할 일 달성도: ${R.avgAch == null ? '-' : Math.round(R.avgAch) + '%'} / 평균 집중도: ${R.avgFocus == null ? '-' : R.avgFocus.toFixed(1)} / 5`,
+      `목표 진행: ${R.gainMs ? gainTxt(R.gain) : '-'} / 할 일 달성도: ${R.avgAch == null ? '-' : Math.round(R.avgAch) + '%'} / 평균 집중도: ${R.avgFocus == null ? '-' : R.avgFocus.toFixed(1)} / 5`,
       `주간 목표: ${goals.length ? `${goals.filter((g) => g.progress >= 100).length}/${goals.length} 달성` : '없음'}`,
       ...goals.map((g) => `- ${goalName(D, g)} · ${g.title}: ${g.progress}%`),
       `과목별: ${R.subjects.map((x) => `${x.name} ${fmtHM(x.ms)}`).join(', ') || '-'}`,
@@ -1127,7 +1133,7 @@
   const QUICK = ['이번 주 공부 어땠는지 봐 주세요', '주간 목표 크기가 적당한지 봐 주세요', '최종 목표까지 계획을 같이 세워요', '성적 분석해 주세요', '수학 공부 방법이 고민이에요'];
   function statLine(R, label) {
     if (!R.sessions.length) return `${label}: 기록 없음`;
-    return `${label}: 순공 ${fmtHM(R.total)}, 공부한 날 ${R.studyDays}일, 공부 ${R.sessions.length}번, 평균 할 일 달성도 ${R.avgAch == null ? '-' : Math.round(R.avgAch) + '%'}, 평균 집중도 ${R.avgFocus == null ? '-' : R.avgFocus.toFixed(1)}/5, `
+    return `${label}: 순공 ${fmtHM(R.total)}, 공부한 날 ${R.studyDays}일, 공부 ${R.sessions.length}번, 주간 목표 진행 ${R.gainMs ? gainTxt(R.gain) : '-'}(1시간당 ${perHour(R.gain, R.gainMs) != null ? gainTxt(perHour(R.gain, R.gainMs)) : '-'}), 할 일을 쓴 공부의 평균 할 일 달성도 ${R.avgAch == null ? '-' : Math.round(R.avgAch) + '%'}, 평균 집중도 ${R.avgFocus == null ? '-' : R.avgFocus.toFixed(1)}/5, `
       + `방해 요인 ${R.distractors.slice(0, 3).map((d) => `${d.name} ${d.count}번`).join(', ') || '없음'}, 앱 이탈 비율 ${R.gross ? pct(R.away / R.gross) : '0%'}`
       + (R.cam.n ? `, 카메라 확인 자리 비움 ${fmtHM(R.cam.awayMs)}·졸음 감지 ${R.cam.drowsy}회` : '');
   }
@@ -1139,7 +1145,7 @@
     const f = D.meta.final;
     const goalLine = (g) => `- [${goalName(D, g)}] ${g.title}: 진행률 ${g.progress}%, 공부 ${fmtHM(goalMs(D, g.id))}(${goalSessions(D, g.id).length}번)${g.targetMin ? `, 목표 시간 ${fmtHM(g.targetMin * 60000)}` : ''}`;
     const recent = D.sessions.filter((s) => s.date >= dayKey(addDays(now, -6))).sort((a, b) => a.start - b.start).slice(-25)
-      .map((s) => `- ${s.date.slice(5)} ${fmtTime(s.start)} ${look.name(s)} · ${s.goalTitle ? `목표 '${s.goalTitle}' · ` : ''}할 일 '${s.plan}' · 예상 ${s.planMin}분 → 순공 ${Math.round(s.studyMs / 60000)}분 · 달성도 ${s.achieve}% · 집중 ${s.focus}/5${s.distractors.length ? ` · 방해: ${s.distractors.join(', ')}` : ''}${s.drowsyCount ? ` · 졸음 감지 ${s.drowsyCount}회` : ''}`);
+      .map((s) => `- ${s.date.slice(5)} ${fmtTime(s.start)} ${look.name(s)} · ${s.goalTitle ? `목표 '${s.goalTitle}' · ` : ''}${s.plan ? `할 일 '${s.plan}' · ` : ''}예상 ${s.planMin}분 → 순공 ${Math.round(s.studyMs / 60000)}분 · ${s.goalBefore != null && s.goalProgress != null ? `목표 ${s.goalBefore}→${s.goalProgress}% · ` : ''}${s.achieve != null ? `할 일 달성도 ${s.achieve}% · ` : ''} 집중 ${s.focus}/5${s.distractors.length ? ` · 방해: ${s.distractors.join(', ')}` : ''}${s.drowsyCount ? ` · 졸음 감지 ${s.drowsyCount}회` : ''}`);
     const g = gradeRows(D); const n = latestNote(D);
     return [
       `오늘: ${fmtDateLong(now)} / 실험 단계: ${PHASE[D.meta.prefs.phase] || '일반'} / 하루 순공 목표: ${fmtHM(D.meta.dailyGoalMin * 60000)}`,
@@ -1361,7 +1367,7 @@
   }
   function closeSheet() { sheet = null; renderSheet(); }
   function pctHint(key, v, d) {
-    if (v == null) return '밀거나 눌러서 골라 주세요';
+    if (v == null) return d && d.base != null && key !== 'achieve' ? `지난번 ${d.base}% · 지금 몇 %인지 골라 주세요` : '밀거나 눌러서 골라 주세요';
     if (key === 'achieve') return v >= 100 ? '다 끝냈어요' : v >= 75 ? '거의 다 했어요' : v >= 50 ? '절반 넘게 했어요' : v >= 25 ? '조금 했어요' : '거의 못 했어요';
     if (v >= 100) return '목표 달성!';
     if (d.base == null) return '';
@@ -1369,7 +1375,7 @@
     return diff === 0 ? `지난번 ${d.base}%와 같아요` : `지난번 ${d.base}% → ${diff > 0 ? '+' : ''}${diff}%p`;
   }
   function pctHTML(key, label, sub, d) {
-    const v = d[key]; const shown = v == null ? 50 : v;
+    const v = d[key]; const shown = v == null ? (key !== 'achieve' && d.base != null ? d.base : 50) : v;
     return `<div class="field pct" data-pct="${key}">
       <span class="lbl" id="pl-${key}">${esc(label)}</span>${sub ? `<span class="hint">${esc(sub)}</span>` : ''}
       <div class="pct-row"><span class="pct-val">${v == null ? '–' : v + '%'}</span><span class="pct-hint">${esc(pctHint(key, v, d))}</span></div>
@@ -1380,7 +1386,8 @@
   function setPct(key, raw) {
     if (!sheet) return;
     const d = sheet.draft; let v;
-    if (raw === '+5' || raw === '-5') v = clampPct((d[key] == null ? 50 : d[key]) + (raw === '+5' ? 5 : -5)); else v = clampPct(raw);
+    const from = d[key] == null ? (key !== 'achieve' && d.base != null ? d.base : 50) : d[key];
+    if (raw === '+5' || raw === '-5') v = clampPct(from + (raw === '+5' ? 5 : -5)); else v = clampPct(raw);
     d[key] = v; d.err = '';
     const box = $(`#sheetCard [data-pct="${key}"]`); if (!box) return;
     $('.pct-val', box).textContent = v + '%';
@@ -1415,7 +1422,7 @@
     return `<form id="goalForm" class="sheet-form" novalidate autocomplete="off">
       <div style="display:grid;gap:4px"><h2 id="sheetTitle">${editing ? '주간 목표 고치기' : '이번 주 목표 추가'}</h2><p class="muted small-text">${weekLabel(parseDay(d.week))}</p></div>
       <fieldset><legend>과목</legend>${subjChips(state, d.subjectId)}</fieldset>
-      <div class="field"><label for="gTitle">목표</label><input id="gTitle" type="text" maxlength="40" value="${esc(d.title)}" placeholder="예: 미적분 2단원 개념과 기본 문제 끝내기"><span class="hint">이번 주 안에 끝낼 수 있는 크기로, 범위가 보이게 적어요.</span></div>
+      <div class="field"><label for="gTitle">목표</label><input id="gTitle" type="text" maxlength="40" value="${esc(d.title)}" placeholder="예: 미적분 2단원 개념과 기본 문제 끝내기"><span class="hint">일주일 안에 끝낼 수 있는 작은 목표일수록 진행률이 잘 보여요. 범위가 보이게 적어요.</span></div>
       <div class="field"><label for="gTarget">이번 주 목표 공부 시간 <span class="muted" style="font-weight:400">(선택)</span></label><select id="gTarget">${TARGET_MIN.map((m) => `<option value="${m}" ${Number(d.targetMin) === m ? 'selected' : ''}>${m ? fmtHM(m * 60000) : '정하지 않음'}</option>`).join('')}</select></div>
       ${editing ? pctHTML('progress', '진행률', '공부를 끝낼 때도 바꿀 수 있어요. 100%가 되면 달성으로 표시돼요.', d) : ''}
       ${errLine(d)}
@@ -1425,8 +1432,8 @@
   }
   function startSheetHTML(d) {
     const D = state; const g = d.goalId ? goalById(D, d.goalId) : null;
-    const last = g ? goalSessions(D, g.id).slice(-1)[0] : null;
-    const cont = last && last.achieve < 100 && last.plan ? last.plan : '';
+    const past = (g ? goalSessions(D, g.id) : D.sessions.filter((x) => !x.goalId && d.subjectId && x.subjectId === d.subjectId).sort((a, b) => a.start - b.start)).filter((x) => x.plan).reverse();
+    const recent = []; past.forEach((x) => { if (recent.length < 3 && !recent.some((y) => y.plan === x.plan)) recent.push(x); });
     const nm = g ? goalName(D, g) : '';
     const pick = d.pick ? (() => {
       const act = weekGoals(D, weekKey(new Date())).filter((x) => x.progress < 100);
@@ -1438,9 +1445,9 @@
       <h2 id="sheetTitle">공부 시작</h2>${pick}
       ${g && !d.pick ? `<div class="start-goal">${subjTag(nm, slotOfName(D, nm))}<b>${esc(g.title)}</b><span class="muted small-text">지금 진행률 ${g.progress}% · 이번 주 ${fmtHM(goalMs(D, g.id))} 공부</span></div>`
         : g ? '' : `<fieldset><legend>과목</legend>${subjChips(D, d.subjectId)}<span class="hint">주간 목표에 없는 공부예요. 통계에는 '목표 없이 한 공부'로 따로 모여요.</span></fieldset>`}
-      <div class="field"><label for="stPlan">이번에 할 일</label><input id="stPlan" type="text" maxlength="40" value="${esc(d.plan)}" placeholder="예: 2단원 문제 15~30번">
-        ${cont ? `<div class="chips"><button type="button" class="chip" data-act="use-plan" data-v="${esc(cont)}">지난번 이어서: ${esc(cont)} (${last.achieve}%)</button></div>` : ''}
-        <span class="hint">끝낼 때 이 할 일을 몇 % 했는지 5% 단위로 기록해요. 범위까지 적으면 정확해져요.</span></div>
+      <div class="field"><label for="stPlan">이번에 할 일 <span class="muted" style="font-weight:400">(선택)</span></label><input id="stPlan" type="text" maxlength="40" value="${esc(d.plan)}" placeholder="예: 2단원 문제 15~30번">
+        ${recent.length ? `<div class="chips">${recent.map((x, i) => `<button type="button" class="chip" data-act="use-plan" data-v="${esc(x.plan)}">${i === 0 && x.achieve != null && x.achieve < 100 ? '이어서: ' : ''}${esc(x.plan)}</button>`).join('')}</div>` : ''}
+        <span class="hint">적으면 끝낼 때 이 할 일을 몇 % 했는지도 기록해요. 비워 두고 바로 시작해도 돼요.</span></div>
       <fieldset><legend>예상 시간</legend><div class="chips">${PLAN_MIN.map((m) => `<button type="button" class="chip" data-act="pick-min" data-v="${m}" aria-pressed="${d.planMin === m}">${m}분</button>`).join('')}</div></fieldset>
       ${Cam.supported() ? `<label class="check"><input type="checkbox" id="stCam" ${d.cam ? 'checked' : ''}><span>카메라 관리 같이 켜기 <span class="muted">(졸음·자리 비움 알림, 영상은 저장 안 함)</span></span></label>` : ''}
       ${errLine(d)}
@@ -1449,17 +1456,17 @@
   }
   function newCheckoutDraft() {
     const r = state.running; const g = r && r.goalId ? goalById(state, r.goalId) : null;
-    return { achieve: null, goalProgress: g ? g.progress : null, base: g ? g.progress : null, focus: null, dist: [], none: false, awayEx: state.meta.prefs.away === 'exclude', camEx: true, memo: '', err: '' };
+    return { achieve: null, goalProgress: null, base: g ? g.progress : null, focus: null, dist: [], none: false, awayEx: state.meta.prefs.away === 'exclude', camEx: true, memo: '', err: '' };
   }
   function checkoutSheetHTML(d) {
     const D = state; const r = D.running; const g = r.goalId ? goalById(D, r.goalId) : null;
     const nm = findSubj(D, r.subjectId) ? findSubj(D, r.subjectId).name : r.subject;
     const cam = r.cam || zero();
     return `<form id="coForm" class="sheet-form" novalidate autocomplete="off">
-      <div style="display:grid;gap:4px"><h2 id="sheetTitle">공부 기록하기</h2><p class="muted small-text">${esc(nm)} · ${esc(r.plan)}</p></div>
+      <div style="display:grid;gap:4px"><h2 id="sheetTitle">공부 기록하기</h2><p class="muted small-text">${esc(nm)}${r.plan ? ` · ${esc(r.plan)}` : g ? ` · ${esc(g.title)}` : ''}</p></div>
       <div class="co-sum"><span>순공 <b>${fmtHM(r.studyMs)}</b>${r.awayMs > 0 ? ` (이탈 ${fmtDur(r.awayMs)} 포함)` : ''}</span><span>휴식 ${fmtHM(r.breakMs)}</span><span>예상 ${r.planMin}분</span></div>
-      ${pctHTML('achieve', '할 일 달성도', `'${r.plan}'${pp(r.plan, '을', '를')} 얼마나 했나요?`, d)}
-      ${g ? pctHTML('goalProgress', '주간 목표 진행률', `'${g.title}' 전체는 지금 몇 %인가요?`, d) : ''}
+      ${g ? pctHTML('goalProgress', '주간 목표 진행률', `'${g.title}' 전체는 지금 몇 %까지 왔나요?`, d) : ''}
+      ${r.plan ? pctHTML('achieve', '할 일 달성도', `'${r.plan}'${pp(r.plan, '을', '를')} 얼마나 했나요?`, d) : ''}
       <fieldset><legend>얼마나 집중했나요?</legend>
         <div class="seg five">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-act="co-focus" data-v="${n}" aria-pressed="${d.focus === n}">${n}<small>${FOCUS_CAP[n - 1]}</small></button>`).join('')}</div></fieldset>
       <fieldset><legend>공부를 방해한 것 <span class="muted" style="font-weight:400;font-size:13px">(여러 개 선택)</span></legend>
@@ -1631,13 +1638,12 @@
     const g = d.goalId ? goalById(state, d.goalId) : null;
     if (d.goalId && !g) { closeSheet(); return; }
     if (!g && !d.subjectId) { d.err = '과목을 골라 주세요.'; renderSheet(); return; }
-    if (!String(d.plan || '').trim()) { d.err = '이번에 할 일을 적어 주세요. 예: 2단원 15~30번'; renderSheet(); const t = $('#stPlan'); if (t) t.focus(); return; }
     if (state.running) { closeSheet(); return; }
     const sid = g ? g.subjectId : d.subjectId; const s = findSubj(state, sid);
     ensureAudio();
     if (Cam.state === 'error') Cam.state = 'off';
     const now = Date.now();
-    state.running = { id: uid(), goalId: g ? g.id : null, goalTitle: g ? g.title : '', subjectId: sid, subject: s ? s.name : (g ? g.subject : '기타'), plan: d.plan.trim().slice(0, 40), planMin: d.planMin || 30,
+    state.running = { id: uid(), goalId: g ? g.id : null, goalTitle: g ? g.title : '', subjectId: sid, subject: s ? s.name : (g ? g.subject : '기타'), plan: String(d.plan || '').trim().slice(0, 40), planMin: d.planMin || 30,
       startedAt: now, mode: 'study', modeSince: now, studyMs: 0, breakMs: 0, awayMs: 0, awayCount: 0, hiddenSince: null, chimed: false, endAt: null, overlay: true, cam: { used: false, awayMs: 0, drowsyCount: 0 } };
     const wantCam = !!d.cam && Cam.supported();
     if (Cam.supported() && (!!state.meta.prefs.camAuto !== wantCam || !state.meta.prefs.camAutoSet)) { state.meta.prefs.camAuto = wantCam; state.meta.prefs.camAutoSet = true; metaChanged(); }
@@ -1797,26 +1803,33 @@
   function buildFeedback(sess, g, before) {
     const lines = [];
     const actualMin = Math.round(sess.studyMs / 60000);
-    if (sess.achieve >= 100) lines.push(`'${sess.plan}'${pp(sess.plan, '을', '를')} 다 끝냈어요.`);
-    else if (sess.achieve >= 50) lines.push(`'${sess.plan}' ${sess.achieve}% 했어요. 남은 부분은 다음 공부에서 '지난번 이어서'로 시작할 수 있어요.`);
-    else lines.push(`이번엔 ${sess.achieve}%였어요. 다음엔 할 일을 더 작게 나눠 보세요.`);
+    if (g && sess.goalProgress != null) {
+      const dg = sess.goalProgress - before;
+      lines.push(sess.goalProgress >= 100 && before < 100 ? `주간 목표 '${g.title}'${pp(g.title, '을', '를')} 달성했어요!` : dg > 0 ? `주간 목표 진행률 ${before}% → ${sess.goalProgress}% (${gainTxt(dg)}, ${fmtHM(sess.studyMs)} 공부).` : `이번 공부로는 주간 목표 진행률이 그대로(${before}%)예요. 목표가 크다면 더 작게 나눠 보세요.`);
+    }
+    if (sess.achieve != null) {
+      if (sess.achieve >= 100) lines.push(`'${sess.plan}'${pp(sess.plan, '을', '를')} 다 끝냈어요.`);
+      else if (sess.achieve >= 50) lines.push(`'${sess.plan}' ${sess.achieve}% 했어요. 다음엔 '이어서' 버튼으로 바로 시작할 수 있어요.`);
+      else lines.push(`할 일은 ${sess.achieve}%였어요. 다음엔 할 일을 더 작게 나눠 보세요.`);
+    }
     if (sess.achieve >= 90 && sess.planMin) {
       const d = (actualMin - sess.planMin) / sess.planMin;
       lines.push(Math.abs(d) <= 0.15 ? `예상 ${sess.planMin}분 → 실제 ${actualMin}분. 예상과 거의 같았어요.` : `예상 ${sess.planMin}분 → 실제 ${actualMin}분 (${d > 0 ? '+' : ''}${Math.round(d * 100)}%).`);
     }
-    if (g && sess.goalProgress != null && sess.goalProgress !== before) lines.push(sess.goalProgress >= 100 ? `주간 목표 '${g.title}'${pp(g.title, '을', '를')} 달성했어요!` : `주간 목표 진행률 ${before}% → ${sess.goalProgress}%.`);
     const since = dayKey(addDays(new Date(), -14));
     const hist = state.sessions.filter((s) => s.subjectId === sess.subjectId && s.date >= since && s.achieve >= 90 && s.planMin).map((s) => (s.studyMs / 60000 - s.planMin) / s.planMin);
     const ha = avg(hist); const nm = sessName(state, sess);
     if (hist.length >= 3 && ha >= 0.25) lines.push(`${nm}${pp(nm, '은', '는')} 최근 거의 다 끝낸 공부 ${hist.length}번이 예상보다 평균 ${pct(ha)} 더 걸렸어요. 다음엔 예상 시간을 ${(1 + ha).toFixed(1)}배로 잡아 보세요.`);
     if (sess.focus <= 2) { const x = sess.distractors.find((t) => TIPS[t]); lines.push(x ? TIPS[x].short : '집중이 어려웠네요. 다음 공부 전에 5분 쉬고 시작해 보세요.'); }
-    else if (sess.achieve < 50 && sess.distractors.includes('할 일이 불명확')) lines.push(TIPS['할 일이 불명확'].short);
+    else if (sess.achieve != null && sess.achieve < 50 && sess.distractors.includes('할 일이 불명확')) lines.push(TIPS['할 일이 불명확'].short);
     return lines.slice(0, 4);
   }
   function saveCheckout() {
     const r = state && state.running; if (!r || !sheet || sheet.kind !== 'checkout') return;
     const d = sheet.draft; readSheetInputs();
-    if (d.achieve == null || !d.focus) { d.err = d.achieve == null && !d.focus ? '할 일 달성도와 집중도를 골라 주세요.' : d.achieve == null ? '할 일을 몇 % 했는지 골라 주세요.' : '집중도를 골라 주세요.'; renderSheet(); return; }
+    const gx = r.goalId ? goalById(state, r.goalId) : null;
+    const miss = [gx && d.goalProgress == null ? '주간 목표 진행률' : '', r.plan && d.achieve == null ? '할 일 달성도' : '', !d.focus ? '집중도' : ''].filter(Boolean);
+    if (miss.length) { d.err = `${miss.join(', ')}${pp(miss[miss.length - 1], '을', '를')} 골라 주세요.`; renderSheet(); return; }
     if (Cam.state === 'on' || Cam.state === 'loading') addCam(Cam.stop());
     if (Cam.state === 'error') Cam.state = 'off';
     camStatus = '';
@@ -1828,13 +1841,13 @@
     const sess = stamp({ id: r.id, goalId: g ? g.id : null, goalTitle: g ? g.title : (r.goalTitle || ''), subjectId: r.subjectId, subject: s ? s.name : r.subject, plan: r.plan, planMin: r.planMin,
       date: dayKey(r.startedAt), start: r.startedAt, end: r.endAt,
       studyMs: Math.max(0, r.studyMs - (awayEx ? r.awayMs : 0) - (camEx ? cam.awayMs : 0)), grossMs: r.studyMs, breakMs: r.breakMs, awayMs: r.awayMs, awayCount: r.awayCount, awayExcluded: awayEx,
-      achieve: d.achieve, goalBefore: before, goalProgress: g ? clampPct(d.goalProgress == null ? before : d.goalProgress) : null, focus: d.focus, distractors: d.dist.slice(), memo: String(d.memo || '').trim().slice(0, 100), phase: prefs().phase,
+      achieve: r.plan ? d.achieve : null, goalBefore: before, goalProgress: g ? clampPct(d.goalProgress == null ? before : d.goalProgress) : null, focus: d.focus, distractors: d.dist.slice(), memo: String(d.memo || '').trim().slice(0, 100), phase: prefs().phase,
       camUsed: !!cam.used, camAwayMs: Math.round(cam.awayMs), drowsyCount: cam.drowsyCount, camAwayExcluded: camEx });
     Arduino.send('E');
     state.sessions.push(sess); queue('session', sess);
     let reached = false;
     if (g && sess.goalProgress !== before) { reached = sess.goalProgress >= 100 && before < 100; setGoalProgress(g, sess.goalProgress); stamp(g); queue('goal', g); }
-    state.lastFeedback = prefs().phase !== 'A' ? { date: dayKey(new Date()), title: `${sess.subject} · ${sess.plan}`, lines: buildFeedback(sess, g, before) } : null;
+    state.lastFeedback = prefs().phase !== 'A' ? { date: dayKey(new Date()), title: `${sess.subject} · ${sess.plan || sess.goalTitle || '공부'}`, lines: buildFeedback(sess, g, before) } : null;
     state.running = null; sheet = null; save();
     if (route.page !== 'home') history.replaceState(null, '', '#home');
     renderAll(); window.scrollTo(0, 0);
@@ -1874,7 +1887,7 @@
   function attention(sw, P) {
     const tk = dayKey(new Date()); const R = sw.R; const out = [];
     if (P.cur) { const gap = sw.lastDate ? daysBetween(sw.lastDate, tk) : null; if (gap == null) out.push('최근 5주 공부 기록 없음'); else if (gap >= 3) out.push(`${gap}일째 공부 기록 없음`); }
-    if (R.sessions.length >= 3 && R.avgAch != null && R.avgAch < 50) out.push(`할 일 달성도 평균 ${Math.round(R.avgAch)}%`);
+    if (R.nAch >= 3 && R.avgAch != null && R.avgAch < 50) out.push(`할 일 달성도 평균 ${Math.round(R.avgAch)}%`);
     if (R.sessions.length >= 3 && R.avgFocus != null && R.avgFocus <= 2.5) out.push(`집중도 평균 ${R.avgFocus.toFixed(1)}`);
     if (R.cam.drowsy >= 4) out.push(`졸음 감지 ${R.cam.drowsy}회`);
     if (sw.prev.total >= 2 * 3600e3 && R.total < sw.prev.total * 0.5) out.push(`순공 ${fmtHM(sw.prev.total)} → ${fmtHM(R.total)} (${P.than} 대비)`);
@@ -1913,7 +1926,7 @@
       <div class="span2 tiles">
         <div class="tile"><span class="label">기록한 학생</span><span class="value">${active.length} <small>/ ${list.length}명</small></span><span class="delta">이 주에 공부 기록이 있는 학생</span></div>
         <div class="tile"><span class="label">1인 평균 순공</span><span class="value">${fmtHM(active.length ? C.total / active.length : 0)}</span><span class="delta">기록한 학생 기준</span></div>
-        <div class="tile"><span class="label">할 일 달성도</span><span class="value">${C.avgAch == null ? '–' : Math.round(C.avgAch) + '%'}</span><span class="delta">공부 ${C.sessions.length}번 평균</span></div>
+        <div class="tile"><span class="label">1시간당 목표 진행</span><span class="value">${perHour(C.gain, C.gainMs) != null ? gainTxt(perHour(C.gain, C.gainMs)) : '–'}</span><span class="delta">주간 목표로 한 공부 기준</span></div>
         <div class="tile"><span class="label">평균 집중도</span><span class="value">${C.avgFocus == null ? '–' : C.avgFocus.toFixed(1)} <small>/ 5</small></span><span class="delta">학생이 스스로 매긴 값</span></div>
         <div class="tile"><span class="label">주간 목표 달성</span><span class="value">${gDone} <small>/ ${goals.length}개</small></span><span class="delta">${goals.length ? `평균 진행률 ${Math.round(avg(goals.map((g) => g.progress)))}%` : '세운 목표 없음'}</span></div>
         <div class="tile"><span class="label">졸음 감지</span><span class="value">${C.cam.drowsy}<small>회</small></span><span class="delta">카메라를 켠 공부 ${C.cam.n}번</span></div>
@@ -1931,7 +1944,7 @@
     if (!sums.length) return '<p class="empty">아직 가입한 학생이 없어요. 학생들에게 가입 코드를 알려 주세요.</p>';
     return sums.map((x) => `<a class="srow-btn" href="#student/${encodeURIComponent(x.u.uid)}">
       <span class="st-name"><b>${esc(x.u.name)}</b><span class="muted small-text">${esc(x.u.studentNo)}${x.u.cls ? ` · ${esc(x.u.cls)}반` : ''}${x.u.status === 'disabled' ? ' · 정지' : ''}</span></span>
-      <span class="st-cells"><span><small>이번 주 순공</small>${fmtHM(x.R.total)}</span><span><small>할 일 달성도</small>${x.R.avgAch == null ? '–' : Math.round(x.R.avgAch) + '%'}</span><span><small>주간 목표</small>${x.goals.length ? `${x.done}/${x.goals.length}` : '–'}</span><span><small>최근 기록</small>${ago(x.lastDate)}</span></span></a>`).join('');
+      <span class="st-cells"><span><small>이번 주 순공</small>${fmtHM(x.R.total)}</span><span><small>목표 진행</small>${x.R.gainMs ? gainTxt(x.R.gain) : '–'}</span><span><small>주간 목표</small>${x.goals.length ? `${x.done}/${x.goals.length}` : '–'}</span><span><small>최근 기록</small>${ago(x.lastDate)}</span></span></a>`).join('');
   }
   function studentListHTML() {
     const P = periodOf({ mode: 'week', offset: 0 });
@@ -2004,7 +2017,7 @@
   const SESSION_HEAD = ['날짜', '요일', '시작', '종료', '과목', '주간 목표', '이번에 할 일', '예상(분)', '순공(분)', '휴식(분)', '앱 이탈(분)', '할 일 달성도(%)', '목표 진행률 전(%)', '목표 진행률 후(%)', '집중도(1-5)', '방해요인', '카메라 사용', '카메라 자리비움(분)', '졸음 감지', '실험단계'];
   function sessionRow(D, s) {
     return [s.date, WD[parseDay(s.date).getDay()], fmtTime(s.start), fmtTime(s.end), sessName(D, s), s.goalTitle || '', s.plan || '', s.planMin || '', mins(s.studyMs), mins(s.breakMs || 0), mins(s.awayMs || 0),
-      s.achieve, s.goalBefore == null ? '' : s.goalBefore, s.goalProgress == null ? '' : s.goalProgress, s.focus, (s.distractors || []).join(' / '), s.camUsed ? '예' : '아니오', mins(s.camAwayMs || 0), s.drowsyCount || 0, PHASE[s.phase] || ''];
+      s.achieve == null ? '' : s.achieve, s.goalBefore == null ? '' : s.goalBefore, s.goalProgress == null ? '' : s.goalProgress, s.focus, (s.distractors || []).join(' / '), s.camUsed ? '예' : '아니오', mins(s.camAwayMs || 0), s.drowsyCount || 0, PHASE[s.phase] || ''];
   }
   function studentCSV(kind) {
     const D = state;

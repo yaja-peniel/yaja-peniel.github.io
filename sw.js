@@ -1,6 +1,6 @@
 // 야자 관리실 서비스 워커: 한 번 열어 둔 앱을 인터넷 없이도 열 수 있게 파일을 저장해 둡니다.
 // 같은 주소의 파일은 "인터넷 먼저, 안 되면 저장본" 방식이라, 파일을 고쳐 다시 올리면 다음 실행 때 바로 반영돼요.
-const CACHE = 'yaja-room-app-v9';
+const CACHE = 'yaja-room-app-v11';
 const FONT_CACHE = 'yaja-room-fonts';
 const ASSETS = [
   './',
