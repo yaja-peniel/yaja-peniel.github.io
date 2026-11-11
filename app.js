@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.3.0';
+  const APP_VERSION = '2.3.1';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -37,6 +37,10 @@
   const clampPct = (v) => Math.max(0, Math.min(100, Math.round((Number(v) || 0) / 5) * 5));
   const clone = (o) => JSON.parse(JSON.stringify(o));
   function dayKey(d) { d = new Date(d); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  // a study day runs from 4 a.m. to 4 a.m., so a night session that crosses midnight stays on the same day
+  const DAY_START_H = 4;
+  function studyNow() { return new Date(Date.now() - DAY_START_H * 3600e3); }
+  function studyDay(ts) { return dayKey(Number(ts) - DAY_START_H * 3600e3); }
   function parseDay(k) { const [y, m, d] = String(k).split('-').map(Number); return new Date(y, m - 1, d); }
   function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
   function weekStart(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
@@ -58,8 +62,8 @@
   function batchim(word) { const c = String(word).charCodeAt(String(word).length - 1); if (c < 0xac00 || c > 0xd7a3) return null; return (c - 0xac00) % 28 !== 0; }
   function pp(word, a, b) { const t = batchim(word); return t === null ? `${a}(${b})` : t ? a : b; }
   function iga(word) { return pp(word, '이', '가'); }
-  function ago(key) { if (!key) return '기록 없음'; const d = daysBetween(key, dayKey(new Date())); return d <= 0 ? '오늘' : d === 1 ? '어제' : `${d}일 전`; }
-  function ddayText(date) { const n = daysBetween(dayKey(new Date()), date); return n > 0 ? `D-${n}` : n === 0 ? 'D-day' : `D+${-n}`; }
+  function ago(key) { if (!key) return '기록 없음'; const d = daysBetween(key, dayKey(studyNow())); return d <= 0 ? '오늘' : d === 1 ? '어제' : `${d}일 전`; }
+  function ddayText(date) { const n = daysBetween(dayKey(studyNow()), date); return n > 0 ? `D-${n}` : n === 0 ? 'D-day' : `D+${-n}`; }
   function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   const mins = (ms) => (ms / 60000).toFixed(1);
 
@@ -183,7 +187,7 @@
   const serverInfo = { mentor: null };
   function stamp(rec) { rec.updatedAt = Math.max(Date.now(), (Number(rec.updatedAt) || 0) + 1); return rec; }
   const GOAL_STATUS = { done: '달성', carried: '이어 감', active: '진행 중', missed: '미완료' };
-  function goalStatus(g) { if (g.progress >= 100) return 'done'; if (g.carriedTo) return 'carried'; return g.week < weekKey(new Date()) ? 'missed' : 'active'; }
+  function goalStatus(g) { if (g.progress >= 100) return 'done'; if (g.carriedTo) return 'carried'; return g.week < weekKey(studyNow()) ? 'missed' : 'active'; }
   function scoresText(scores) { return Object.values(scores || {}).filter((v) => v && v.grade).map((v) => `${v.name || ''} ${v.grade}${v.pct != null ? `(${v.pct})` : ''}`.trim()).join(' · '); }
   function viewOf(kind, r) {
     if (kind === 'session') {
@@ -308,7 +312,7 @@
     const D = normalizeData({}); D.meta.updatedAt = 1;
     const byName = {}; D.meta.subjects.forEach((s) => { byName[s.name] = s; });
     const now = Date.now();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = studyNow(); today.setHours(0, 0, 0, 0);
     const tk = dayKey(today);
     const w0 = weekStart(today);
     const diligence = opt.diligence == null ? 0.85 : opt.diligence;
@@ -380,7 +384,7 @@
   function makeDemoState() {
     const D = makeSampleData(20261111);
     const s = Object.assign(freshState(), D);
-    const today = new Date();
+    const today = studyNow();
     s.meta.mentorNotes.push({ id: 'n1', date: dayKey(addDays(today, -2)), summary: '수학은 시간을 가장 많이 쓰는데 개념 부족 오답이 반복돼서, 개념서를 다시 읽는 대신 책을 덮고 백지에 정리해 보기로 했어요. 21시대 졸음이 잦아서 그 앞에 스트레칭을 넣기로 했어요.',
       promises: [{ text: '수학 단원 하나를 책 덮고 백지에 정리하기', done: true }, { text: '21시 전에 5분 일어나 스트레칭하기', done: false }] });
     return s;
@@ -429,7 +433,7 @@
 
   // ===================== statistics =====================
   function periodOf(st) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = studyNow(); today.setHours(0, 0, 0, 0);
     if (st.mode === 'day') {
       const d = addDays(today, st.offset); const k = dayKey(d); const p = dayKey(addDays(d, -1));
       return { mode: 'day', start: d, end: d, a: k, b: k, label: fmtDateLong(d) + (st.offset === 0 ? ' · 오늘' : ''), elapsed: 1, prevA: p, prevB: p, than: '전날', cur: st.offset === 0, unit: '날' };
@@ -760,16 +764,16 @@
   }
   function dayGoalText(ms, goalMs) { return ms >= goalMs ? `하루 목표 ${fmtHM(goalMs)}를 채웠어요` : `하루 목표 ${fmtHM(goalMs)} 중 ${fmtHM(ms)} (${pct(ms / goalMs)})`; }
   function homeNumbers() {
-    const D = state; const now = new Date(); const tk = dayKey(now); const wk = weekKey(now);
-    const r = D.running; const live = r && dayKey(r.startedAt) === tk ? runningMs() : 0;
+    const D = state; const now = studyNow(); const tk = dayKey(now); const wk = weekKey(now);
+    const r = D.running; const live = r && studyDay(r.startedAt) === tk ? runningMs() : 0;
     const bySubj = {};
     D.sessions.filter((x) => x.date === tk).forEach((x) => { const nm = sessName(D, x); bySubj[nm] = (bySubj[nm] || 0) + x.studyMs; });
     if (live) { const sj = findSubj(D, r.subjectId); const nm = sj ? sj.name : r.subject; bySubj[nm] = (bySubj[nm] || 0) + live; }
-    return { today: studyOn(D, tk, tk) + live, week: studyOn(D, wk, tk) + (r && dayKey(r.startedAt) >= wk ? runningMs() : 0), goalMs: D.meta.dailyGoalMin * 60000,
+    return { today: studyOn(D, tk, tk) + live, week: studyOn(D, wk, tk) + (r && studyDay(r.startedAt) >= wk ? runningMs() : 0), goalMs: D.meta.dailyGoalMin * 60000,
       subj: Object.entries(bySubj).sort((a, b) => b[1] - a[1]) };
   }
   function streakDays(D) {
-    const days = new Set(D.sessions.map((x) => x.date)); let d = new Date(); let n = 0;
+    const days = new Set(D.sessions.map((x) => x.date)); let d = studyNow(); let n = 0;
     if (!days.has(dayKey(d)) && !(D.running)) d = addDays(d, -1);
     else if (!days.has(dayKey(d))) { n = 1; d = addDays(d, -1); }
     while (days.has(dayKey(d))) { n++; d = addDays(d, -1); }
@@ -778,7 +782,7 @@
   function todayHeroHTML(D, N) {
     const r = D.running; const p = Math.min(1, N.today / N.goalMs);
     return `<section class="today-hero" aria-label="오늘 순공">
-      <div class="th-top"><span>오늘 순공</span><span>${fmtDateLong(new Date())}</span></div>
+      <div class="th-top"><span>오늘 순공</span><span>${fmtDateLong(studyNow())}</span></div>
       <a class="th-clock" id="stToday" href="#stats" data-act="go-today" aria-label="오늘 순공 ${fmtHM(N.today)}, 오늘 기록 보기">${fmtClock(N.today)}</a>
       <div class="th-track${p >= 1 ? ' met' : ''}"><span id="dayFill" style="width:${p * 100}%"></span></div>
       <p class="th-goal" id="dayText">${dayGoalText(N.today, N.goalMs)}</p>
@@ -788,7 +792,7 @@
   }
   function goalCardHTML(D, g) {
     const r = D.running; const nm = goalName(D, g); const slot = slotOfName(D, nm);
-    const ms = goalMs(D, g.id); const ss = goalSessions(D, g.id); const last = ss[ss.length - 1];
+    const ms = goalMs(D, g.id) + (D.running && D.running.goalId === g.id ? runningMs() : 0); const ss = goalSessions(D, g.id); const last = ss[ss.length - 1];
     const meta = [`이번 주 ${fmtHM(ms)}${g.targetMin ? ` / 목표 ${fmtHM(g.targetMin * 60000)}` : ''}`, `${ss.length}번 공부`];
     if (last) meta.push(last.plan ? `최근: ${last.plan}${last.achieve != null ? ` ${last.achieve}%` : ''}` : last.goalBefore != null && last.goalProgress != null ? `최근 공부 ${gainTxt(last.goalProgress - last.goalBefore)}` : '');
     const isRun = r && r.goalId === g.id;
@@ -803,7 +807,7 @@
     </article>`;
   }
   function carryCandidates() {
-    const prevWk = dayKey(addDays(weekStart(new Date()), -7));
+    const prevWk = dayKey(addDays(weekStart(studyNow()), -7));
     if (state.carryDismissed === prevWk) return [];
     return state.goals.filter((g) => g.week === prevWk && g.progress < 100 && !g.carriedTo);
   }
@@ -813,13 +817,13 @@
       ${n.promises.map((p, i) => `<label class="promise ${p.done ? 'done' : ''}"><input type="checkbox" data-act="promise" data-i="${i}" ${p.done ? 'checked' : ''}><span>${esc(p.text)}</span></label>`).join('')}</section>`;
   }
   function homeHTML() {
-    const D = state; const now = new Date(); const ws = weekStart(now); const wk = dayKey(ws);
+    const D = state; const now = studyNow(); const ws = weekStart(now); const wk = dayKey(ws);
     const name = mode === 'demo-student' ? '체험 학생' : auth.user.name;
     const N = homeNumbers();
     const goals = weekGoals(D, wk); const active = goals.filter((g) => g.progress < 100); const done = goals.filter((g) => g.progress >= 100);
     const carry = carryCandidates();
     const fb = D.lastFeedback && D.lastFeedback.date === dayKey(now) && D.meta.prefs.phase !== 'A' ? D.lastFeedback : null;
-    const hour = now.getHours();
+    const hour = new Date().getHours();
     const hello = hour < 12 ? '좋은 아침이에요' : hour < 18 ? '오늘도 힘내요' : '야자 시작해 볼까요';
     const streak = streakDays(D);
     return `<div class="home">
@@ -909,7 +913,7 @@
     const D = state;
     const tabs = `<div class="seg-tabs" style="--n:2" role="group" aria-label="목표 보기"><button type="button" data-act="goals-tab" data-v="goals" aria-pressed="${goalsTab === 'goals'}">목표</button><button type="button" data-act="goals-tab" data-v="grades" aria-pressed="${goalsTab === 'grades'}">성적</button></div>`;
     if (goalsTab === 'grades') return `<div class="stack">${tabs}${gradesHTML(D, true)}</div>`;
-    const wk = weekKey(new Date());
+    const wk = weekKey(studyNow());
     const weeks = [...new Set(D.goals.map((g) => g.week).concat([wk]))].sort().reverse();
     const shown = weeks.slice(0, weeksShown);
     return `<div class="stack">${tabs}${finalHeroHTML(D, true)}<div class="cards">
@@ -989,7 +993,7 @@
   function level(ms) { const m = ms / 60000; return m <= 0 ? 0 : m < 60 ? 1 : m < 120 ? 2 : m < 180 ? 3 : 4; }
   function calendarHTML(P, R, sel) {
     const y = P.start.getFullYear(); const mo = P.start.getMonth();
-    const lead = (new Date(y, mo, 1).getDay() + 6) % 7; const days = new Date(y, mo + 1, 0).getDate(); const tk = dayKey(new Date());
+    const lead = (new Date(y, mo, 1).getDay() + 6) % 7; const days = new Date(y, mo + 1, 0).getDate(); const tk = dayKey(studyNow());
     let cells = ['월', '화', '수', '목', '금', '토', '일'].map((w) => `<div class="cal-wd" aria-hidden="true">${w}</div>`).join('');
     for (let i = 0; i < lead; i++) cells += '<div class="day pad" aria-hidden="true"></div>';
     for (let d = 1; d <= days; d++) {
@@ -1040,7 +1044,7 @@
   }
   function curStat() { return isAdmin() ? astat : stat; }
   function statsHTML(D, st, self) {
-    const P = periodOf(st); const look = lookFor(D); const tk = dayKey(new Date());
+    const P = periodOf(st); const look = lookFor(D); const tk = dayKey(studyNow());
     const R = rangeStats(D.sessions, P.a, P.b, look);
     const prev = rangeStats(D.sessions, P.prevA, P.prevB, look); const hasPrev = prev.sessions.length > 0;
     const wkA = dayKey(weekStart(P.start));
@@ -1138,7 +1142,7 @@
       + (R.cam.n ? `, 카메라 확인 자리 비움 ${fmtHM(R.cam.awayMs)}·졸음 감지 ${R.cam.drowsy}회` : '');
   }
   function mentorContext() {
-    const D = state; const now = new Date(); const tk = dayKey(now); const w0 = weekStart(now); const wk = dayKey(w0); const look = lookFor(D);
+    const D = state; const now = studyNow(); const tk = dayKey(now); const w0 = weekStart(now); const wk = dayKey(w0); const look = lookFor(D);
     const cur = rangeStats(D.sessions, wk, tk, look);
     const last = rangeStats(D.sessions, dayKey(addDays(w0, -7)), dayKey(addDays(w0, -1)), look);
     const r14 = rangeStats(D.sessions, dayKey(addDays(now, -13)), tk, look);
@@ -1193,7 +1197,7 @@
     try {
       const j = await api('mentor', { mode: 'summary', context: mentorContext(), messages: state.chat.slice(-16) });
       const promises = (Array.isArray(j.promises) ? j.promises : []).map((t) => String(t).trim().slice(0, 80)).filter(Boolean).slice(0, 3);
-      state.meta.mentorNotes.push({ id: uid(), date: dayKey(new Date()), summary: String(j.summary || '').trim().slice(0, 400) || '상담 요약을 받지 못했어요.', promises: promises.map((t) => ({ text: t, done: false })) });
+      state.meta.mentorNotes.push({ id: uid(), date: dayKey(studyNow()), summary: String(j.summary || '').trim().slice(0, 400) || '상담 요약을 받지 못했어요.', promises: promises.map((t) => ({ text: t, done: false })) });
       state.meta.mentorNotes = state.meta.mentorNotes.slice(-10);
       state.chat = []; metaChanged();
       toast(promises.length ? '상담을 정리했어요. 약속은 홈 화면에서도 볼 수 있어요.' : '상담을 정리했어요');
@@ -1436,7 +1440,7 @@
     const recent = []; past.forEach((x) => { if (recent.length < 3 && !recent.some((y) => y.plan === x.plan)) recent.push(x); });
     const nm = g ? goalName(D, g) : '';
     const pick = d.pick ? (() => {
-      const act = weekGoals(D, weekKey(new Date())).filter((x) => x.progress < 100);
+      const act = weekGoals(D, weekKey(studyNow())).filter((x) => x.progress < 100);
       return `<fieldset><legend>무엇을 공부할까요?</legend><div class="goal-pick">${act.map((x) => { const n2 = goalName(D, x); return `<button type="button" class="gp" data-act="pick-goal" data-v="${x.id}" aria-pressed="${d.goalId === x.id}"><span class="subj"><i class="dot" style="--c:${colorOf(slotOfName(D, n2))}"></i>${esc(n2)}</span><b>${esc(x.title)}</b><span class="muted small-text">${x.progress}%</span></button>`; }).join('')}
         <button type="button" class="gp" data-act="pick-goal" data-v="" aria-pressed="${!d.goalId}"><b>목표 없이 공부하기</b><span class="muted small-text">과목만 고르고 시작</span></button></div>
         ${act.length ? '' : '<span class="hint">이번 주 목표를 만들어 두면 목표별로 진행률이 쌓여요.</span>'}</fieldset>`;
@@ -1500,7 +1504,7 @@
       <h2 id="sheetTitle">시험 추가</h2>
       <div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button type="button" data-act="exam-type" data-v="mock" aria-pressed="${d.type === 'mock'}">모의고사</button><button type="button" data-act="exam-type" data-v="school" aria-pressed="${d.type === 'school'}">내신</button></div>
       <div class="two"><div class="field"><label for="exName">시험 이름</label><input id="exName" type="text" maxlength="20" value="${esc(d.name)}" placeholder="${d.type === 'mock' ? '예: 11월 모의고사' : '예: 2학기 기말고사'}"></div>
-        <div class="field"><label for="exDate">날짜</label><input id="exDate" type="date" value="${esc(d.date)}" max="${dayKey(new Date())}"></div></div>
+        <div class="field"><label for="exDate">날짜</label><input id="exDate" type="date" value="${esc(d.date)}" max="${dayKey(studyNow())}"></div></div>
       <p class="muted small-text">${d.type === 'mock' ? '모의고사는 9등급이에요. 영어·한국사는 절대평가라 백분위 칸을 비워 두세요.' : '2025학년도 고1부터 내신은 5등급제예요.'}</p>
       <div class="score-grid">${state.meta.subjects.map((s) => { const v = d.scores[s.id] || {}; return `<div class="score-row"><span>${subjTag(s.name, s.slot)}</span>
         <label class="sr" for="eg-${s.id}">${esc(s.name)} 등급</label><select id="eg-${s.id}" data-exam-grade="${s.id}"><option value="">안 봄</option>${range(1, max).map((n) => `<option value="${n}" ${Number(v.grade) === n ? 'selected' : ''}>${n}등급</option>`).join('')}</select>
@@ -1582,7 +1586,7 @@
   }
   function carryOver() {
     const list = carryCandidates(); if (!list.length) return;
-    const wk = weekKey(new Date());
+    const wk = weekKey(studyNow());
     list.forEach((g, i) => {
       const n = stamp({ id: uid(), week: wk, subjectId: g.subjectId, subject: g.subject, title: g.title, targetMin: g.targetMin || 0, progress: g.progress, status: 'active', createdAt: Date.now() + i, carriedFrom: g.id });
       state.goals.push(n); queue('goal', n);
@@ -1760,6 +1764,10 @@
     }
   }
   setInterval(tick, 500);
+  setInterval(() => {
+    const a = document.activeElement; const typing = a && a.closest && a.closest('#main') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+    if (isStudent() && state && state.running && !state.running.endAt && route.page === 'home' && !sheet && !typing && $('#timer').hidden) renderPage();
+  }, 30000);
   let camPausedByHide = false;
   function onHide() {
     const r = state && isStudent() ? state.running : null;
@@ -1816,7 +1824,7 @@
       const d = (actualMin - sess.planMin) / sess.planMin;
       lines.push(Math.abs(d) <= 0.15 ? `예상 ${sess.planMin}분 → 실제 ${actualMin}분. 예상과 거의 같았어요.` : `예상 ${sess.planMin}분 → 실제 ${actualMin}분 (${d > 0 ? '+' : ''}${Math.round(d * 100)}%).`);
     }
-    const since = dayKey(addDays(new Date(), -14));
+    const since = dayKey(addDays(studyNow(), -14));
     const hist = state.sessions.filter((s) => s.subjectId === sess.subjectId && s.date >= since && s.achieve >= 90 && s.planMin).map((s) => (s.studyMs / 60000 - s.planMin) / s.planMin);
     const ha = avg(hist); const nm = sessName(state, sess);
     if (hist.length >= 3 && ha >= 0.25) lines.push(`${nm}${pp(nm, '은', '는')} 최근 거의 다 끝낸 공부 ${hist.length}번이 예상보다 평균 ${pct(ha)} 더 걸렸어요. 다음엔 예상 시간을 ${(1 + ha).toFixed(1)}배로 잡아 보세요.`);
@@ -1839,7 +1847,7 @@
     const before = g ? g.progress : null;
     const s = findSubj(state, r.subjectId);
     const sess = stamp({ id: r.id, goalId: g ? g.id : null, goalTitle: g ? g.title : (r.goalTitle || ''), subjectId: r.subjectId, subject: s ? s.name : r.subject, plan: r.plan, planMin: r.planMin,
-      date: dayKey(r.startedAt), start: r.startedAt, end: r.endAt,
+      date: studyDay(r.startedAt), start: r.startedAt, end: r.endAt,
       studyMs: Math.max(0, r.studyMs - (awayEx ? r.awayMs : 0) - (camEx ? cam.awayMs : 0)), grossMs: r.studyMs, breakMs: r.breakMs, awayMs: r.awayMs, awayCount: r.awayCount, awayExcluded: awayEx,
       achieve: r.plan ? d.achieve : null, goalBefore: before, goalProgress: g ? clampPct(d.goalProgress == null ? before : d.goalProgress) : null, focus: d.focus, distractors: d.dist.slice(), memo: String(d.memo || '').trim().slice(0, 100), phase: prefs().phase,
       camUsed: !!cam.used, camAwayMs: Math.round(cam.awayMs), drowsyCount: cam.drowsyCount, camAwayExcluded: camEx });
@@ -1847,7 +1855,7 @@
     state.sessions.push(sess); queue('session', sess);
     let reached = false;
     if (g && sess.goalProgress !== before) { reached = sess.goalProgress >= 100 && before < 100; setGoalProgress(g, sess.goalProgress); stamp(g); queue('goal', g); }
-    state.lastFeedback = prefs().phase !== 'A' ? { date: dayKey(new Date()), title: `${sess.subject} · ${sess.plan || sess.goalTitle || '공부'}`, lines: buildFeedback(sess, g, before) } : null;
+    state.lastFeedback = prefs().phase !== 'A' ? { date: dayKey(studyNow()), title: `${sess.subject} · ${sess.plan || sess.goalTitle || '공부'}`, lines: buildFeedback(sess, g, before) } : null;
     state.running = null; sheet = null; save();
     if (route.page !== 'home') history.replaceState(null, '', '#home');
     renderAll(); window.scrollTo(0, 0);
@@ -1859,7 +1867,7 @@
     if (mode !== 'admin' || admin.loading) return;
     if (!force && admin.at && Date.now() - admin.at < 5 * 60000) return;
     admin.loading = true; admin.err = ''; renderPage();
-    const since = dayKey(addDays(weekStart(new Date()), -28));
+    const since = dayKey(addDays(weekStart(studyNow()), -28));
     api('admin_overview', { since }).then((j) => {
       admin.users = Array.isArray(j.users) ? j.users : [];
       admin.data = {}; Object.entries(j.data || {}).forEach(([u, d]) => { admin.data[u] = normalizeData(d); });
@@ -1885,7 +1893,7 @@
     return { u, D, look, R, prev, goals, done: goals.filter((g) => g.progress >= 100).length, lastDate };
   }
   function attention(sw, P) {
-    const tk = dayKey(new Date()); const R = sw.R; const out = [];
+    const tk = dayKey(studyNow()); const R = sw.R; const out = [];
     if (P.cur) { const gap = sw.lastDate ? daysBetween(sw.lastDate, tk) : null; if (gap == null) out.push('최근 5주 공부 기록 없음'); else if (gap >= 3) out.push(`${gap}일째 공부 기록 없음`); }
     if (R.nAch >= 3 && R.avgAch != null && R.avgAch < 50) out.push(`할 일 달성도 평균 ${Math.round(R.avgAch)}%`);
     if (R.sessions.length >= 3 && R.avgFocus != null && R.avgFocus <= 2.5) out.push(`집중도 평균 ${R.avgFocus.toFixed(1)}`);
@@ -1903,7 +1911,7 @@
   function classSelectHTML(id) { const cs = classes(); return cs.length ? `<label class="sr" for="${id}">반 고르기</label><select id="${id}" data-adm="cls"><option value="">전체 반</option>${cs.map((c) => `<option value="${esc(c)}" ${admin.cls === c ? 'selected' : ''}>${esc(c)}반</option>`).join('')}</select>` : ''; }
   function dashHTML() {
     const gate = adminGate(); if (gate) return gate;
-    const P = periodOf({ mode: 'week', offset: admin.week }); const tk = dayKey(new Date());
+    const P = periodOf({ mode: 'week', offset: admin.week }); const tk = dayKey(studyNow());
     const list = admStudents(); const sums = list.map((u) => studentWeek(u, P));
     const active = sums.filter((x) => x.R.sessions.length);
     const all = []; sums.forEach((x) => x.R.sessions.forEach((s) => all.push(Object.assign({}, s, { _n: x.look.name(s) }))));
@@ -1967,13 +1975,13 @@
     const u = admin.users.find((x) => x.uid === id);
     if (!u || u.role !== 'student') return '<div class="stack"><section class="card"><p>학생을 찾을 수 없어요.</p><div><a class="btn small" href="#students">학생 목록으로</a></div></section></div>';
     if (astat.uid !== id) astat = { mode: 'week', offset: 0, sel: null, uid: id };
-    const D = admD(id); const wk = weekKey(new Date()); const goals = weekGoals(D, wk);
+    const D = admD(id); const wk = weekKey(studyNow()); const goals = weekGoals(D, wk);
     return `<div class="stack detail-wrap">
       <div><a class="btn ghost small" href="#students">‹ 학생 목록</a></div>
       <section class="card detail-head"><div class="avatar" aria-hidden="true">${esc(u.name[0] || '?')}</div><div class="acc-name"><b>${esc(u.name)}</b><span>${esc(u.studentNo)}${u.cls ? ` · ${esc(u.cls)}반` : ''} · 최근 접속 ${fmtDateTime(u.last)}</span></div>${u.status === 'disabled' ? '<span class="pill bad">정지</span>' : '<span></span>'}</section>
       ${mode === 'admin' && !admin.full[id] ? '<p class="muted small-text">전체 기록을 불러오는 중이에요. 지금은 최근 5주 기록만 보여요.</p>' : ''}
       ${finalHeroHTML(D, false)}
-      <section class="card" aria-labelledby="dgH"><div class="card-head"><h2 id="dgH">이번 주 목표</h2><span class="muted small-text">${weekLabel(weekStart(new Date()))}</span></div>${goals.length ? goals.map((g) => goalMiniHTML(D, g)).join('') : '<p class="empty">이번 주 목표가 아직 없어요.</p>'}</section>
+      <section class="card" aria-labelledby="dgH"><div class="card-head"><h2 id="dgH">이번 주 목표</h2><span class="muted small-text">${weekLabel(weekStart(studyNow()))}</span></div>${goals.length ? goals.map((g) => goalMiniHTML(D, g)).join('') : '<p class="empty">이번 주 목표가 아직 없어요.</p>'}</section>
       ${statsHTML(D, astat, false)}
       ${gradesHTML(D, false)}
       <p class="foot">학생의 공부 메모와 AI 상담 내용은 개인정보라 선생님 화면에 보내지 않아요.</p>
@@ -2095,13 +2103,13 @@
       case 'dismiss-install': device.installDismissed = true; saveDevice(); renderPage(); break;
       // home
       case 'final-edit': { const f = state.meta.final; openSheet('final', { title: f.title, detail: f.detail, dateName: f.dateName, date: f.date, grades: Object.assign({}, f.grades) }); break; }
-      case 'goal-new': openSheet('goal', { id: null, week: weekKey(new Date()), subjectId: null, title: '', targetMin: 0 }); break;
+      case 'goal-new': openSheet('goal', { id: null, week: weekKey(studyNow()), subjectId: null, title: '', targetMin: 0 }); break;
       case 'goal-edit': { const g = goalById(state, id); if (g) openSheet('goal', { id: g.id, week: g.week, subjectId: g.subjectId, title: g.title, targetMin: g.targetMin || 0, progress: g.progress, base: g.progress }); break; }
       case 'goal-del': if (armInline(b, '정말 지우기')) deleteGoal(); break;
       case 'start': if (!state.running) openSheet('start', { goalId: id, plan: '', planMin: lastPlanMin(id), cam: !!prefs().camAuto }); break;
       case 'free-start': if (!state.running) openSheet('start', { goalId: null, subjectId: null, plan: '', planMin: lastPlanMin(null), cam: !!prefs().camAuto }); break;
       case 'carry': carryOver(); break;
-      case 'dismiss-carry': state.carryDismissed = dayKey(addDays(weekStart(new Date()), -7)); save(); renderPage(); break;
+      case 'dismiss-carry': state.carryDismissed = dayKey(addDays(weekStart(studyNow()), -7)); save(); renderPage(); break;
       case 'dismiss-fb': state.lastFeedback = null; save(); renderPage(); break;
       case 'promise': {
         const n = latestNote(state); const i = Number(b.dataset.i);
@@ -2128,14 +2136,14 @@
       case 'alarm-ok': dismissAlarm(); toast('좋아요. 다시 집중해 봐요.'); break;
       // stats (students and the teacher's student page)
       case 'st-mode': { const s = curStat(); s.mode = ['day', 'month'].includes(b.dataset.v) ? b.dataset.v : 'week'; s.offset = 0; s.sel = null; s.back = null; renderPage(); break; }
-      case 'st-goday': { const s = curStat(); if (s.mode !== 'day') s.back = { mode: s.mode, offset: s.offset, y: window.scrollY }; s.mode = 'day'; s.offset = Math.min(0, daysBetween(dayKey(new Date()), b.dataset.key)); s.sel = null; renderPage(); window.scrollTo(0, 0); break; }
+      case 'st-goday': { const s = curStat(); if (s.mode !== 'day') s.back = { mode: s.mode, offset: s.offset, y: window.scrollY }; s.mode = 'day'; s.offset = Math.min(0, daysBetween(dayKey(studyNow()), b.dataset.key)); s.sel = null; renderPage(); window.scrollTo(0, 0); break; }
       case 'st-back': { const s = curStat(); const bk = s.back; if (!bk) break; s.mode = bk.mode; s.offset = bk.offset; s.back = null; renderPage(); window.scrollTo(0, bk.y || 0); break; }
       case 'st-today': { const s = curStat(); s.offset = 0; renderPage(); break; }
       case 'go-today': stat = { mode: 'day', offset: 0, sel: null }; break;
       case 'go-week': stat = { mode: 'week', offset: 0, sel: null }; break;
       case 'quick-start': {
         if (state.running) break;
-        const act = weekGoals(state, weekKey(new Date())).filter((g) => g.progress < 100);
+        const act = weekGoals(state, weekKey(studyNow())).filter((g) => g.progress < 100);
         const g0 = act[0] || null;
         openSheet('start', { pick: true, goalId: g0 ? g0.id : null, subjectId: null, plan: '', planMin: lastPlanMin(g0 ? g0.id : null), cam: !!prefs().camAuto });
         break;
@@ -2155,7 +2163,7 @@
       // goals tab
       case 'goals-tab': goalsTab = b.dataset.v === 'grades' ? 'grades' : 'goals'; renderPage(); break;
       case 'more-weeks': weeksShown += 6; renderPage(); break;
-      case 'exam-new': openSheet('exam', { type: 'mock', name: '', date: dayKey(new Date()), scores: {} }); break;
+      case 'exam-new': openSheet('exam', { type: 'mock', name: '', date: dayKey(studyNow()), scores: {} }); break;
       case 'exam-del': {
         if (!armInline(b, '삭제', 'armed-del')) break;
         const e = state.exams.find((x) => x.id === id); if (!e) break;
@@ -2180,11 +2188,11 @@
       case 'arduino-on': Arduino.connect().then((ok) => { toast(ok ? '아두이노를 연결했어요' : '아두이노를 연결하지 못했어요'); if (route.page === 'me') renderPage(); }); break;
       case 'arduino-off': Arduino.disconnect().then(() => { toast('아두이노 연결을 끊었어요'); if (route.page === 'me') renderPage(); }); break;
       case 'arduino-test': Arduino.send('W'); setTimeout(() => Arduino.send('O'), 1500); break;
-      case 'export': shareFile(`yaja-room_${b.dataset.v === 'goals' ? 'goals' : 'sessions'}_${dayKey(new Date())}.csv`, studentCSV(b.dataset.v)); break;
+      case 'export': shareFile(`yaja-room_${b.dataset.v === 'goals' ? 'goals' : 'sessions'}_${dayKey(studyNow())}.csv`, studentCSV(b.dataset.v)); break;
       // teacher
       case 'adm-refresh': if (mode === 'demo-admin') toast('체험 모드는 예시 데이터라 새로고침할 게 없어요'); else adminLoad(true); break;
       case 'adm-week': admin.week = Math.max(-3, Math.min(0, admin.week + Number(b.dataset.v))); renderPage(); break;
-      case 'adm-export': shareFile(`yaja-room_students_${b.dataset.v === 'anon' ? 'anon_' : ''}${dayKey(new Date())}.csv`, adminCSV(b.dataset.v === 'anon')); break;
+      case 'adm-export': shareFile(`yaja-room_students_${b.dataset.v === 'anon' ? 'anon_' : ''}${dayKey(studyNow())}.csv`, adminCSV(b.dataset.v === 'anon')); break;
       case 'adm-reset': {
         if (mode === 'demo-admin') { toast('체험 모드에서는 계정을 바꿀 수 없어요'); break; }
         if (!armInline(b, '정말 초기화')) break;
@@ -2300,8 +2308,8 @@
   if (auth) enterMode(auth.user.role === 'admin' ? 'admin' : 'student', true);
   else if (demo === 'student' || demo === 'admin') enterMode(demo === 'admin' ? 'demo-admin' : 'demo-student', true);
   else renderAll();
-  let lastDay = dayKey(new Date());
-  setInterval(() => { const d = dayKey(new Date()); if (d !== lastDay) { lastDay = d; if (mode !== 'login' && !(state && state.running) && !sheet) renderAll(); } }, 30000);
+  let lastDay = dayKey(studyNow());
+  setInterval(() => { const d = dayKey(studyNow()); if (d !== lastDay) { lastDay = d; if (mode !== 'login' && !(state && state.running) && !sheet) renderAll(); } }, 30000);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* the app still works online */ }); });
   }
