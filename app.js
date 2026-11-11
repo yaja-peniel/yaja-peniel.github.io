@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.2.0';
+  const APP_VERSION = '2.2.1';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -138,7 +138,7 @@
       subjects: DEFAULT_SUBJECTS.map((name, i) => ({ id: 's' + i, name, slot: i })),
       distractors: DEFAULT_DISTRACTORS.slice(),
       dailyGoalMin: 240,
-      prefs: { phase: 'normal', away: 'record', keepAwake: true, chime: true, camSens: 'normal', camPreview: true, camAlarm: true, camVibrate: true, camAuto: false, mentorConsent: false },
+      prefs: { phase: 'normal', away: 'record', keepAwake: true, chime: true, camSens: 'normal', camPreview: true, camAlarm: true, camVibrate: true, camAuto: true, camAutoSet: false, mentorConsent: false },
       mentorNotes: [],
     };
   }
@@ -149,6 +149,7 @@
     out.final = Object.assign({}, f.final, m.final && typeof m.final === 'object' ? m.final : {});
     if (!out.final.grades || typeof out.final.grades !== 'object') out.final.grades = {};
     out.prefs = Object.assign({}, f.prefs, m.prefs && typeof m.prefs === 'object' ? m.prefs : {});
+    if (!out.prefs.camAutoSet) out.prefs.camAuto = true; // camera on by default until the student turns it off once
     if (!Array.isArray(out.subjects) || !out.subjects.length) out.subjects = f.subjects;
     if (!Array.isArray(out.distractors)) out.distractors = f.distractors;
     if (!Array.isArray(out.mentorNotes)) out.mentorNotes = [];
@@ -1638,7 +1639,7 @@
     state.running = { id: uid(), goalId: g ? g.id : null, goalTitle: g ? g.title : '', subjectId: sid, subject: s ? s.name : (g ? g.subject : '기타'), plan: d.plan.trim().slice(0, 40), planMin: d.planMin || 30,
       startedAt: now, mode: 'study', modeSince: now, studyMs: 0, breakMs: 0, awayMs: 0, awayCount: 0, hiddenSince: null, chimed: false, endAt: null, overlay: true, cam: { used: false, awayMs: 0, drowsyCount: 0 } };
     const wantCam = !!d.cam && Cam.supported();
-    if (Cam.supported() && !!state.meta.prefs.camAuto !== wantCam) { state.meta.prefs.camAuto = wantCam; metaChanged(); }
+    if (Cam.supported() && (!!state.meta.prefs.camAuto !== wantCam || !state.meta.prefs.camAutoSet)) { state.meta.prefs.camAuto = wantCam; state.meta.prefs.camAutoSet = true; metaChanged(); }
     sheet = null; save(); renderAll(); requestWake();
     Arduino.send('S');
     if (wantCam) camToggle();
