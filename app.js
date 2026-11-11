@@ -1385,7 +1385,7 @@
       el.innerHTML = `<div style="display:grid;gap:16px">
         <section class="card" aria-labelledby="mtIntro"><h2 id="mtIntro" style="font-size:16px">AI 학습 멘토</h2>
           <p>내 공부 기록, 성적과 목표, 지난 상담 내용을 보고 공부 방법과 과목별 시간 배분을 함께 고민해 주는 멘토예요. 상담이 끝나면 다음 야자에서 할 약속을 정리해 주고, 다음 상담에서 실천했는지 다시 물어봐요.</p>
-          <p class="muted small-text">운영팀이 서버를 연결하면 쓸 수 있어요. 설정 방법은 README의 'AI 멘토 연결'을 보세요.</p></section>
+          <p class="small-text"><b>아직 AI가 연결되지 않아서 지금은 예시 대화만 보여요.</b> 운영팀이 AI 키를 넣은 서버를 연결하면 이 화면에서 바로 실제 상담이 시작돼요. (연결 방법: 저장소 README 2번)</p></section>
         <section class="card" aria-labelledby="mtEx"><div class="card-head"><h2 id="mtEx">이런 식으로 상담해요</h2></div><span class="tag">예시 대화 · 실제 AI 답변이 아니에요</span>
           <div class="chat">
             <div class="msg user">수학을 제일 오래 하는데 성적이 잘 안 올라요.</div>
