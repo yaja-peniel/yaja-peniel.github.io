@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>야자 관리실</title>
+<meta name="description" content="야간자율학습 계획, 타이머, 점검, 주간 보고서를 한곳에서 관리하는 앱">
+<meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d111a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="야자 관리실">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><h1>야자 관리실</h1><span class="date" id="hdrDate"></span></div>
+    <span class="phase-pill" id="phasePill" hidden></span>
+  </header>
+
+  <div class="banner" id="sampleBar" hidden>
+    <p><b>지금 보이는 기록은 예시예요.</b> 둘러본 뒤 예시를 지우고 내 기록을 시작하세요.</p>
+    <button class="btn small primary" data-act="clear-sample">예시 지우고 시작하기</button>
+  </div>
+  <div class="banner warn" id="storeWarn" hidden>
+    <p>이 브라우저에서는 기록을 저장할 수 없어요 (시크릿 창 등). 일반 창에서 열어 주세요.</p>
+  </div>
+
+  <main id="v-today" aria-label="오늘"></main>
+  <main id="v-log" aria-label="기록" hidden></main>
+  <main id="v-report" aria-label="주간 보고서" hidden></main>
+  <main id="v-prefs" aria-label="설정" hidden></main>
+</div>
+
+<div class="mini" id="mini" hidden>
+  <div class="mini-inner">
+    <span class="dot" id="miniDot"></span>
+    <span class="mini-label" id="miniLabel"></span>
+    <span class="mini-clock" id="miniClock">00:00:00</span>
+    <button class="nbtn text" data-act="open-timer">크게 보기</button>
+  </div>
+</div>
+
+<section class="timer" id="timer" data-mode="study" hidden aria-label="공부 타이머">
+  <div class="timer-top">
+    <button class="nbtn text" data-act="min-timer">작게 보기</button>
+    <span class="note" id="tWake"></span>
+  </div>
+  <div class="timer-body">
+    <div class="timer-subj"><span class="dot" id="tDot"></span><span id="tSubj"></span></div>
+    <div class="timer-task" id="tTask"></div>
+    <div class="timer-clock" id="tClock" role="timer" aria-live="off">00:00:00</div>
+    <div class="timer-state" id="tState"></div>
+    <div class="timer-plan" id="tPlan"><div class="track"><span id="tBar"></span></div><p id="tPlanText"></p></div>
+    <p class="timer-away" id="tAway"></p>
+  </div>
+  <div class="timer-actions">
+    <button class="nbtn" id="tBreak" data-act="toggle-break">휴식</button>
+    <button class="nbtn lamp" data-act="end-session">끝내고 점검하기</button>
+  </div>
+</section>
+
+<div class="sheet" id="checkout" hidden role="dialog" aria-modal="true" aria-labelledby="coTitle">
+  <div class="sheet-card" id="coCard"></div>
+</div>
+
+<nav class="tabs" aria-label="화면 이동">
+  <div class="tabs-inner">
+    <a class="tab" href="#today" data-view="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></svg>오늘</a>
+    <a class="tab" href="#log" data-view="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>기록</a>
+    <a class="tab" href="#report" data-view="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16.5V11M12 16.5V6M17 16.5v-3.5"/></svg>보고서</a>
+    <a class="tab" href="#prefs" data-view="prefs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>설정</a>
+  </div>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<noscript><p style="padding:24px">이 앱을 쓰려면 브라우저에서 JavaScript를 켜 주세요.</p></noscript>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
