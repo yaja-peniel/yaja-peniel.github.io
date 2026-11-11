@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.2.4';
+  const APP_VERSION = '2.2.5';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -51,7 +51,11 @@
   function fmtClock(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; }
   function fmtTime(ts) { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
   function fmtShortHM(ms) { const m = Math.round(ms / 60000); return `${Math.floor(m / 60)}:${pad(m % 60)}`; }
-  function fmtDateTime(v) { if (!v) return '–'; const d = new Date(v); if (isNaN(d)) return '–'; return `${d.getMonth() + 1}/${d.getDate()} ${fmtTime(d)}`; }
+  function fmtDateTime(v) {
+    if (!v) return '–'; const d = new Date(v); if (isNaN(d)) return '–';
+    const h = d.getHours(); const t = `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${pad(d.getMinutes())}`;
+    return dayKey(d) === dayKey(new Date()) ? `오늘 ${t}` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${t}`;
+  }
   function pct(x) { return `${Math.round(x * 100)}%`; }
   function weekLabel(start) { const e = addDays(start, 6); return start.getMonth() === e.getMonth() ? `${start.getMonth() + 1}월 ${start.getDate()}일 – ${e.getDate()}일` : `${start.getMonth() + 1}월 ${start.getDate()}일 – ${e.getMonth() + 1}월 ${e.getDate()}일`; }
   function monthLabel(d) { return `${d.getFullYear()}년 ${d.getMonth() + 1}월`; }
