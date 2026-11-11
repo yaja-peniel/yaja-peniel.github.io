@@ -77,6 +77,10 @@ EBS 자기주도학습센터를 이용하지 못하는 학생도 야간자율학
 | `MENTOR_DAILY_LIMIT` | 기기 하나가 하루에 보낼 수 있는 질문 수 (기본 30) | 선택 |
 | `MENTOR_GLOBAL_LIMIT` | 전체 하루 질문 수 (기본 400) | 선택 |
 | `MENTOR_MODEL` | 사용할 모델 (기본 `claude-haiku-5-5`) | 선택 |
+| `ANTHROPIC_WORKSPACE_ID` | 키를 만들 때 워크스페이스를 고르지 않았다면 `wrkspc_…` 값 | 경우에 따라 |
+
+> API 키를 만들 때 워크스페이스를 하나 골라 두면 `ANTHROPIC_WORKSPACE_ID`는 넣지 않아도 됩니다.
+> 결제는 선불 크레딧 방식이라, 자동 충전(auto-reload)을 켜지 않으면 충전한 금액 이상은 쓰이지 않습니다.
 
 3. 브라우저로 웹 앱 URL을 열었을 때 `"mentor":"ready"`가 보이면 연결된 것입니다.
 4. 사용량만큼 요금이 나오므로, 하루 제한 값을 학교 예산에 맞게 정하세요.

@@ -10,6 +10,7 @@
  *
  * 스크립트 속성 (프로젝트 설정 → 스크립트 속성)
  *  - ANTHROPIC_API_KEY   (AI 멘토를 쓰려면 필수) Claude API 키
+ *  - ANTHROPIC_WORKSPACE_ID (키를 만들 때 워크스페이스를 고르지 않았을 때만) wrkspc_로 시작하는 값
  *  - MENTOR_MODEL        (선택) 기본값 claude-haiku-5-5
  *  - MENTOR_CODE         (선택) 정하면, 앱 설정에 같은 '멘토 이용 코드'를 넣은 사람만 멘토를 쓸 수 있음
  *  - MENTOR_DAILY_LIMIT  (선택) 기기 하나가 하루에 보낼 수 있는 질문 수, 기본 30
@@ -131,10 +132,13 @@ function mentor_(body) {
   const merged = mergeTurns_(messages);
   const system = MENTOR_RULES + '\n\n[학생 기록]\n' + String(body.context || '(기록 없음)').slice(0, 9000) + MODE_RULES[mode];
 
+  const headers = { Authorization: 'Bearer ' + key, 'anthropic-version': '2026-10-21' };
+  const workspace = props.getProperty('ANTHROPIC_WORKSPACE_ID'); // 워크스페이스를 고르지 않고 만든 키일 때만 필요
+  if (workspace) headers['anthropic-workspace-id'] = workspace;
   const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'post',
     contentType: 'application/json',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    headers: headers,
     payload: JSON.stringify({ model: props.getProperty('MENTOR_MODEL') || 'claude-haiku-5-5', max_tokens: MAX_TOKENS[mode], system: system, messages: merged }),
     muteHttpExceptions: true,
   });
