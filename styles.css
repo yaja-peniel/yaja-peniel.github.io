@@ -480,3 +480,29 @@ table.acc th { font-size: 12px; color: var(--muted); font-weight: 600; border-to
 .detail-head .acc-name span { font-size: 13px; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- day record (planner page) ---------- */
+.planner { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.pl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.pl-head b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.pl-total { font-family: var(--font-num); font-size: 18px; font-weight: 600; }
+.pl-body { display: grid; grid-template-columns: minmax(0, 1fr) 128px; }
+.pl-list { padding: 10px 12px; display: grid; gap: 12px; align-content: start; border-right: 1px solid var(--line); min-width: 0; }
+.pl-subj { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.pl-subj i { width: 4px; height: 18px; border-radius: 2px; background: var(--c); }
+.pl-subj span { font-family: var(--font-num); font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pl-group ul { display: grid; gap: 6px; margin-top: 6px; }
+.pl-task { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 6px; align-items: start; font-size: 14px; }
+.pl-mark { color: var(--muted); font-weight: 700; text-align: center; }
+.pl-text { display: grid; min-width: 0; }
+.pl-text .done { text-decoration: line-through; color: var(--muted); }
+.pl-pct { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pl-sub { font-size: 12px; color: var(--muted); }
+.pl-task .icon-btn { min-width: 28px; height: 28px; font-size: 16px; }
+.pl-grid { padding: 6px 6px 8px; display: grid; align-content: start; }
+.pl-row { display: grid; grid-template-columns: 16px repeat(6, minmax(0, 1fr)); height: 18px; border-top: 1px solid var(--line); }
+.pl-row span { font-size: 10px; color: var(--muted); font-family: var(--font-num); line-height: 18px; }
+.pl-row i { border-left: 1px solid var(--line); }
+.pl-row i[style] { background: var(--c); border-left-color: var(--surface); }
+.pl-note { font-size: 12px; color: var(--muted); padding: 8px 12px 10px; border-top: 1px solid var(--line); }
+@media (max-width: 360px) { .pl-body { grid-template-columns: minmax(0, 1fr) 92px; } .pl-list { padding: 10px 8px; } }

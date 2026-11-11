@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.0.0';
+  const APP_VERSION = '2.1.0';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -428,6 +428,10 @@
   // ===================== statistics =====================
   function periodOf(st) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (st.mode === 'day') {
+      const d = addDays(today, st.offset); const k = dayKey(d); const p = dayKey(addDays(d, -1));
+      return { mode: 'day', start: d, end: d, a: k, b: k, label: fmtDateLong(d) + (st.offset === 0 ? ' · 오늘' : ''), elapsed: 1, prevA: p, prevB: p, than: '전날', cur: st.offset === 0, unit: '날' };
+    }
     if (st.mode === 'month') {
       const m0 = new Date(today.getFullYear(), today.getMonth() + st.offset, 1);
       const m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 0);
@@ -910,11 +914,42 @@
       <div class="sess-sub">순공 ${fmtHM(s.studyMs)} · 할 일 ${s.achieve == null ? '–' : s.achieve + '%'} · 집중 ${s.focus || '–'}/5${gp}${(s.distractors || []).length ? ' · ' + esc(s.distractors.join(', ')) : ''}${s.awayMs ? ` · 이탈 ${fmtDur(s.awayMs)}` : ''}${s.drowsyCount ? ` · 졸음 ${s.drowsyCount}회` : ''}</div>
       ${self && s.memo ? `<div class="sess-sub">메모: ${esc(s.memo)}</div>` : ''}</div></li>`;
   }
-  function dayDetailHTML(D, key, self) {
-    const look = lookFor(D);
+  function fmtHMS(ms) { const t = Math.max(0, Math.round(ms / 1000)); return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`; }
+  // one day as a study-planner page: subjects and to-dos on the left, a 10-minute timetable on the right
+  function dayDetailHTML(D, key, self, opt) {
+    opt = opt || {};
+    const look = lookFor(D); const day = parseDay(key);
     const ss = D.sessions.filter((s) => s.date === key).sort((a, b) => a.start - b.start);
-    return `<div class="day-detail" aria-live="polite"><div class="srow-top"><b>${fmtDateLong(parseDay(key))}</b><span class="val">순공 ${fmtHM(sum(ss.map((s) => s.studyMs)))}${ss.length ? ` · ${ss.length}번` : ''}</span></div>
-      ${ss.length ? `<ul class="sess-list">${ss.map((s) => sessItemHTML(D, s, look, self)).join('')}</ul>` : '<p class="empty">이날은 공부 기록이 없어요.</p>'}</div>`;
+    const total = sum(ss.map((s) => s.studyMs));
+    const head = `<div class="pl-head"><b>${day.getFullYear()}. ${day.getMonth() + 1}. ${day.getDate()}. (${WD[day.getDay()]})</b><span class="pl-total">${Math.floor(total / 3600e3)}H ${pad(Math.round(total / 60000) % 60)}M</span></div>`;
+    const go = opt.goDay ? `<div><button class="btn small" data-act="st-goday" data-key="${key}">이날 하루 통계 보기</button></div>` : '';
+    if (!ss.length) return `<div class="planner" aria-live="polite">${head}<p class="empty" style="padding:14px">이날은 공부 기록이 없어요.</p></div>`;
+    const groups = [];
+    ss.forEach((x) => { const nm = look.name(x); let g = groups.find((y) => y.name === nm); if (!g) groups.push(g = { name: nm, slot: look.slot(nm), ms: 0, items: [] }); g.ms += x.studyMs; g.items.push(x); });
+    const mark = (a) => (a == null ? '·' : a >= 100 ? '○' : a >= 50 ? '△' : '×');
+    const list = groups.map((g) => `<div class="pl-group"><div class="pl-subj"><i style="--c:${colorOf(g.slot)}"></i><b>${esc(g.name)}</b><span>${fmtHMS(g.ms)}</span></div>
+      <ul>${g.items.map((x) => `<li class="pl-task"><span class="pl-mark" aria-label="달성도 ${x.achieve}%">${mark(x.achieve)}</span><div class="pl-text">
+        <span class="${x.achieve >= 100 ? 'done' : ''}">${esc(x.plan || x.goalTitle || '공부')}</span> <span class="pl-pct">${x.achieve == null ? '' : x.achieve + '%'}</span>
+        <span class="pl-sub">${fmtTime(x.start)}–${fmtTime(x.end)} · ${fmtHM(x.studyMs)} · 집중 ${x.focus || '–'}${(x.distractors || []).length ? ' · ' + esc(x.distractors.join(', ')) : ''}</span>
+        ${self && x.memo ? `<span class="pl-sub">메모: ${esc(x.memo)}</span>` : ''}</div>
+        ${self ? `<button class="icon-btn" data-act="sess-del" data-id="${x.id}" aria-label="${fmtTime(x.start)} 공부 기록 삭제">×</button>` : ''}</li>`).join('')}</ul></div>`).join('');
+    // timetable: color each 10-minute slot by the session that covers most of it (start to end, breaks included)
+    const mid = day.getTime();
+    const h0 = Math.floor((ss[0].start - mid) / 3600e3);
+    const h1 = Math.max(h0 + 1, Math.ceil((Math.max(...ss.map((x) => x.end || x.start)) - mid) / 3600e3));
+    const rows = [];
+    for (let h = h0; h < h1; h++) {
+      const cells = range(0, 5).map((c) => {
+        const a = mid + h * 3600e3 + c * 600e3; const b = a + 600e3;
+        let best = null; let bo = 0;
+        ss.forEach((x) => { const o = Math.min(b, x.end || x.start) - Math.max(a, x.start); if (o > bo) { bo = o; best = x; } });
+        return best && bo >= 300e3 ? `<i style="--c:${colorOf(look.slot(look.name(best)))}" title="${esc(look.name(best))} ${fmtTime(a)}"></i>` : '<i></i>';
+      }).join('');
+      rows.push(`<div class="pl-row"><span>${((h % 24) + 24) % 24}</span>${cells}</div>`);
+    }
+    return `<div class="planner" aria-live="polite">${head}
+      <div class="pl-body"><div class="pl-list">${list}</div><div class="pl-grid" role="img" aria-label="${fmtDateLong(day)} 공부 시간표">${rows.join('')}</div></div>
+      <p class="pl-note">○ 다 끝냄 · △ 50~95% · × 50% 미만 · 시간표는 공부를 시작해서 끝낼 때까지(휴식 포함)를 10분 칸에 칠했어요.</p></div>${go}`;
   }
   function level(ms) { const m = ms / 60000; return m <= 0 ? 0 : m < 60 ? 1 : m < 120 ? 2 : m < 180 ? 3 : 4; }
   function calendarHTML(P, R, sel) {
@@ -978,10 +1013,20 @@
     const gDone = goals.filter((g) => g.progress >= 100).length;
     const dayKeys = Object.keys(R.days).sort();
     const sel = st.sel && st.sel >= P.a && st.sel <= P.b ? st.sel : tk >= P.a && tk <= P.b ? tk : dayKeys[dayKeys.length - 1] || P.a;
-    const nav = `<div class="seg-tabs" style="--n:2" role="group" aria-label="통계 기간">
+    const nav = `<div class="seg-tabs" style="--n:3" role="group" aria-label="통계 기간">
+        <button type="button" data-act="st-mode" data-v="day" aria-pressed="${P.mode === 'day'}">일간</button>
         <button type="button" data-act="st-mode" data-v="week" aria-pressed="${P.mode === 'week'}">주간</button>
         <button type="button" data-act="st-mode" data-v="month" aria-pressed="${P.mode === 'month'}">월간</button></div>
       <div class="period-nav"><button class="icon-btn" data-act="st-prev" aria-label="이전 ${P.unit}">‹</button><h2>${P.label}</h2><button class="icon-btn" data-act="st-next" aria-label="다음 ${P.unit}" ${st.offset >= 0 ? 'disabled' : ''}>›</button></div>`;
+    if (P.mode === 'day') {
+      const dTiles = `<div class="tiles">
+        <div class="tile"><span class="label">순공 시간</span><span class="value">${fmtHM(R.total)}</span>${deltaHTML(R.total, hasPrev ? prev.total : null, 'ms', P.than)}</div>
+        <div class="tile"><span class="label">공부 횟수</span><span class="value">${R.sessions.length}<small>번</small></span><span class="delta">하루 목표 ${fmtHM(D.meta.dailyGoalMin * 60000)}의 ${pct(R.total / (D.meta.dailyGoalMin * 60000))}</span></div>
+        <div class="tile"><span class="label">할 일 달성도</span><span class="value">${R.avgAch == null ? '–' : Math.round(R.avgAch) + '%'}</span>${deltaHTML(R.avgAch, hasPrev ? prev.avgAch : null, 'pt', P.than)}</div>
+        <div class="tile"><span class="label">평균 집중도</span><span class="value">${R.avgFocus == null ? '–' : R.avgFocus.toFixed(1)} <small>/ 5</small></span>${deltaHTML(R.avgFocus, hasPrev ? prev.avgFocus : null, 'focus', P.than)}</div>
+      </div>`;
+      return `${nav}${dTiles}<section class="card" aria-labelledby="dyH"><div class="card-head"><h2 id="dyH">하루 기록</h2></div>${dayDetailHTML(D, P.a, self)}</section>${R.sessions.length ? subjectsCardHTML(R) + distractorsCardHTML(R) + camCardHTML(R) : ''}`;
+    }
     if (!R.sessions.length && !goals.length) {
       return `${nav}<section class="card"><h2 style="font-size:16px">이 ${P.unit}에는 공부 기록이 없어요</h2><p class="muted">${self ? '주간 목표를 골라 공부를 시작하고, 끝낼 때 기록을 남기면 여기에 통계가 쌓여요.' : '이 기간에 남긴 기록이 없어요.'}</p>
         ${hasPrev ? '<div><button class="btn small" data-act="st-prev">이전 기록 보기</button></div>' : ''}</section>`;
@@ -1003,7 +1048,7 @@
         return { key: k, label: WD[day.getDay()], sub: `${day.getMonth() + 1}/${day.getDate()}`, ms: d ? d.ms : 0, segs, sel: k === sel, today: k === tk, act: 'st-day', aria: `${fmtDateLong(day)} 순공 ${fmtHM(d ? d.ms : 0)}` };
       });
       timeline = `<section class="card" aria-labelledby="tlH"><div class="card-head"><h2 id="tlH">날짜별 순공</h2><span class="muted small-text">막대를 누르면 그날 기록</span></div>
-        ${vchartHTML(cols, { minMax: 60 * 60000 })}${legendHTML(R.subjects)}${dayDetailHTML(D, sel, self)}</section>`;
+        ${vchartHTML(cols, { minMax: 60 * 60000 })}${legendHTML(R.subjects)}${dayDetailHTML(D, sel, self, { goDay: true })}</section>`;
     } else {
       const wcols = []; let w = weekStart(P.start);
       while (w <= P.end) {
@@ -1013,7 +1058,7 @@
         w = addDays(w, 7);
       }
       timeline = `<section class="card" aria-labelledby="clH"><div class="card-head"><h2 id="clH">달력</h2><span class="muted small-text">날짜를 누르면 그날 기록</span></div>
-          ${calendarHTML(P, R, sel)}${dayDetailHTML(D, sel, self)}</section>
+          ${calendarHTML(P, R, sel)}${dayDetailHTML(D, sel, self, { goDay: true })}</section>
         <section class="card" aria-labelledby="wkH"><div class="card-head"><h2 id="wkH">주별 순공</h2></div>${vchartHTML(wcols, { minMax: 3600e3, h: 110 })}</section>`;
     }
     const gids = new Set(goals.map((g) => g.id));
@@ -2033,7 +2078,8 @@
       case 'cam-toggle': camToggle(); break;
       case 'alarm-ok': dismissAlarm(); toast('좋아요. 다시 집중해 봐요.'); break;
       // stats (students and the teacher's student page)
-      case 'st-mode': { const s = curStat(); s.mode = b.dataset.v === 'month' ? 'month' : 'week'; s.offset = 0; s.sel = null; renderPage(); break; }
+      case 'st-mode': { const s = curStat(); s.mode = ['day', 'month'].includes(b.dataset.v) ? b.dataset.v : 'week'; s.offset = 0; s.sel = null; renderPage(); break; }
+      case 'st-goday': { const s = curStat(); s.mode = 'day'; s.offset = Math.min(0, daysBetween(dayKey(new Date()), b.dataset.key)); s.sel = null; renderPage(); window.scrollTo(0, 0); break; }
       case 'st-prev': { const s = curStat(); s.offset -= 1; s.sel = null; renderPage(); break; }
       case 'st-next': { const s = curStat(); if (s.offset < 0) { s.offset += 1; s.sel = null; renderPage(); } break; }
       case 'st-day': curStat().sel = b.dataset.key; renderPage(); break;
