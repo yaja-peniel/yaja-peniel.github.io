@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.2.2';
+  const APP_VERSION = '2.2.3';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
