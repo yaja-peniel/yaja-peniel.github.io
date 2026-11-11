@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.2.3';
+  const APP_VERSION = '2.2.4';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -257,7 +257,7 @@
       if (mode === 'student') {
         // don't redraw under someone who is typing; the next render picks the new data up
         const a = document.activeElement;
-        const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !/^(checkbox|radio|range)$/.test(a.type);
+        const typing = a && a.closest && a.closest('#main, #sheetCard') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !/^(checkbox|radio|range)$/.test(a.type);
         if (typing) { renderTop(); } else renderAll();
         if (manual) toast('서버와 기록을 맞췄어요');
       }
@@ -694,6 +694,7 @@
     catch (e) { loginBusy = false; loginErr = errText(e); renderLogin(); }
   }
   function onLoggedIn(j, isNew) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // the hidden login field must not count as "typing"
     auth = { token: j.token, user: j.user }; lsSet('auth', auth); lsDel('demo');
     loginBusy = false; loginErr = ''; loginMsg = ''; loginDraft = {}; loginTab = 'login';
     enterMode(j.user.role === 'admin' ? 'admin' : 'student');
