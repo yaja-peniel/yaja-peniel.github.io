@@ -633,15 +633,15 @@
   function renderLogin() {
     const has = !!serverUrl(); const d = loginDraft; const busy = loginBusy ? 'disabled' : '';
     const loginForm = `<form id="loginForm" autocomplete="on" novalidate>
-        <div class="field"><label for="lgNo">학번 또는 아이디</label><input id="lgNo" name="username" type="text" inputmode="text" autocomplete="username" maxlength="20" value="${esc(d.lgNo || '')}" placeholder="예: 20705"></div>
+        <div class="field"><label for="lgNo">학번 또는 아이디</label><input id="lgNo" name="username" type="text" inputmode="text" autocomplete="username" maxlength="20" value="${esc(d.lgNo || '')}" placeholder="예: 10101 (1학년 1반 1번)"></div>
         <div class="field"><label for="lgPw">비밀번호</label><input id="lgPw" name="password" type="password" autocomplete="current-password" maxlength="64" value="${esc(d.lgPw || '')}"></div>
         ${loginErr ? `<p class="form-err" role="alert">${esc(loginErr)}</p>` : ''}
         <button class="btn primary block" type="submit" ${busy}>${loginBusy ? '로그인 중…' : '로그인'}</button>
         <p class="hint">비밀번호를 잊었다면 선생님께 초기화를 부탁하세요.</p></form>`;
     const signupForm = `<form id="signupForm" autocomplete="off" novalidate>
         <div class="field"><label for="suCode">가입 코드</label><input id="suCode" type="text" maxlength="40" value="${esc(d.suCode || '')}" placeholder="선생님께 받은 코드"><span class="hint">선생님은 관리자 가입 코드를 넣으면 관리자 계정이 만들어져요.</span></div>
-        <div class="two"><div class="field"><label for="suNo">학번 또는 아이디</label><input id="suNo" type="text" maxlength="20" value="${esc(d.suNo || '')}" placeholder="예: 20705" autocomplete="username"></div>
-          <div class="field"><label for="suCls">반 <span class="muted" style="font-weight:400">(선택)</span></label><input id="suCls" type="text" maxlength="10" value="${esc(d.suCls || '')}" placeholder="예: 2-7"></div></div>
+        <div class="two"><div class="field"><label for="suNo">학번 또는 아이디</label><input id="suNo" type="text" maxlength="20" value="${esc(d.suNo || '')}" placeholder="예: 10101 (1학년 1반 1번)" autocomplete="username"></div>
+          <div class="field"><label for="suCls">반 <span class="muted" style="font-weight:400">(선택)</span></label><input id="suCls" type="text" maxlength="10" value="${esc(d.suCls || '')}" placeholder="예: 1-1"></div></div>
         <div class="field"><label for="suName">이름</label><input id="suName" type="text" maxlength="20" value="${esc(d.suName || '')}" autocomplete="name"></div>
         <div class="two"><div class="field"><label for="suPw">비밀번호</label><input id="suPw" type="password" maxlength="64" value="${esc(d.suPw || '')}" autocomplete="new-password" placeholder="6자 이상"></div>
           <div class="field"><label for="suPw2">비밀번호 확인</label><input id="suPw2" type="password" maxlength="64" value="${esc(d.suPw2 || '')}" autocomplete="new-password"></div></div>
