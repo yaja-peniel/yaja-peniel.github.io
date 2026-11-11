@@ -2,7 +2,7 @@
   'use strict';
 
   // ===================== constants =====================
-  const APP_VERSION = '2.1.0';
+  const APP_VERSION = '2.2.0';
   const LS = 'yaja2:';
   const CFG = window.YAJA_CONFIG || {};
   const zero = () => ({ awayMs: 0, drowsyCount: 0 });
@@ -755,7 +755,29 @@
   function homeNumbers() {
     const D = state; const now = new Date(); const tk = dayKey(now); const wk = weekKey(now);
     const r = D.running; const live = r && dayKey(r.startedAt) === tk ? runningMs() : 0;
-    return { today: studyOn(D, tk, tk) + live, week: studyOn(D, wk, tk) + (r && dayKey(r.startedAt) >= wk ? runningMs() : 0), goalMs: D.meta.dailyGoalMin * 60000 };
+    const bySubj = {};
+    D.sessions.filter((x) => x.date === tk).forEach((x) => { const nm = sessName(D, x); bySubj[nm] = (bySubj[nm] || 0) + x.studyMs; });
+    if (live) { const sj = findSubj(D, r.subjectId); const nm = sj ? sj.name : r.subject; bySubj[nm] = (bySubj[nm] || 0) + live; }
+    return { today: studyOn(D, tk, tk) + live, week: studyOn(D, wk, tk) + (r && dayKey(r.startedAt) >= wk ? runningMs() : 0), goalMs: D.meta.dailyGoalMin * 60000,
+      subj: Object.entries(bySubj).sort((a, b) => b[1] - a[1]) };
+  }
+  function streakDays(D) {
+    const days = new Set(D.sessions.map((x) => x.date)); let d = new Date(); let n = 0;
+    if (!days.has(dayKey(d)) && !(D.running)) d = addDays(d, -1);
+    else if (!days.has(dayKey(d))) { n = 1; d = addDays(d, -1); }
+    while (days.has(dayKey(d))) { n++; d = addDays(d, -1); }
+    return n;
+  }
+  function todayHeroHTML(D, N) {
+    const r = D.running; const p = Math.min(1, N.today / N.goalMs);
+    return `<section class="today-hero" aria-label="오늘 순공">
+      <div class="th-top"><span>오늘 순공</span><span>${fmtDateLong(new Date())}</span></div>
+      <a class="th-clock" id="stToday" href="#stats" data-act="go-today" aria-label="오늘 순공 ${fmtHM(N.today)}, 오늘 기록 보기">${fmtClock(N.today)}</a>
+      <div class="th-track${p >= 1 ? ' met' : ''}"><span id="dayFill" style="width:${p * 100}%"></span></div>
+      <p class="th-goal" id="dayText">${dayGoalText(N.today, N.goalMs)}</p>
+      ${N.subj.length ? `<div class="th-subj">${N.subj.map(([nm, ms]) => `<span class="th-chip"><i class="dot" style="--c:${colorOf(slotOfName(D, nm))}"></i>${esc(nm)} <b>${fmtShortHM(ms)}</b></span>`).join('')}</div>` : ''}
+      <div class="th-act">${r && !r.endAt ? '<button class="btn lamp" data-act="open-timer">공부 중 · 타이머 보기</button>' : '<button class="btn lamp" data-act="quick-start">공부 시작</button>'}</div>
+    </section>`;
   }
   function goalCardHTML(D, g) {
     const r = D.running; const nm = goalName(D, g); const slot = slotOfName(D, nm);
@@ -785,21 +807,25 @@
   function homeHTML() {
     const D = state; const now = new Date(); const ws = weekStart(now); const wk = dayKey(ws);
     const name = mode === 'demo-student' ? '체험 학생' : auth.user.name;
-    const N = homeNumbers(); const p = Math.min(1, N.today / N.goalMs);
+    const N = homeNumbers();
     const goals = weekGoals(D, wk); const active = goals.filter((g) => g.progress < 100); const done = goals.filter((g) => g.progress >= 100);
     const carry = carryCandidates();
     const fb = D.lastFeedback && D.lastFeedback.date === dayKey(now) && D.meta.prefs.phase !== 'A' ? D.lastFeedback : null;
     const hour = now.getHours();
     const hello = hour < 12 ? '좋은 아침이에요' : hour < 18 ? '오늘도 힘내요' : '야자 시작해 볼까요';
-    return `<div class="stack">
+    const streak = streakDays(D);
+    return `<div class="home">
       <div class="greet"><b>${esc(name)}님, ${hello}</b><span>${fmtDateLong(now)}</span></div>
-      ${finalHeroHTML(D, true)}
-      <section class="strip" aria-label="오늘과 이번 주 공부">
-        <div class="st"><span class="st-l">오늘 순공</span><span class="st-v" id="stToday">${fmtHM(N.today)}</span></div>
-        <div class="st"><span class="st-l">이번 주 순공</span><span class="st-v" id="stWeek">${fmtHM(N.week)}</span></div>
+      <div class="col-a">
+      ${todayHeroHTML(D, N)}
+      <section class="strip" aria-label="이번 주 공부">
+        <a class="st" href="#stats" data-act="go-week"><span class="st-l">이번 주 순공</span><span class="st-v" id="stWeek">${fmtHM(N.week)}</span></a>
         <div class="st"><span class="st-l">주간 목표 달성</span><span class="st-v">${goals.length ? `${done.length} / ${goals.length}` : '–'}</span></div>
-        <div class="goalbar"><div class="goal-track ${p >= 1 ? 'met' : ''}"><span id="dayFill" style="width:${p * 100}%"></span></div><p id="dayText">${dayGoalText(N.today, N.goalMs)}</p></div>
+        <div class="st"><span class="st-l">연속 공부</span><span class="st-v">${streak}일</span></div>
       </section>
+      ${finalHeroHTML(D, true)}
+      </div>
+      <div class="col-b">
       ${fb ? `<section class="card fb" aria-labelledby="fbH"><div class="card-head"><h2 id="fbH">방금 공부 피드백</h2><button class="btn ghost small" data-act="dismiss-fb">닫기</button></div>
         <p class="muted small-text">${esc(fb.title)}</p><ul class="fb-list">${fb.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></section>` : ''}
       <section class="section" aria-labelledby="wgH">
@@ -817,6 +843,7 @@
         <div class="btn-row"><button class="btn small primary" data-act="carry">이번 주로 이어 가기</button><button class="btn small ghost" data-act="dismiss-carry">괜찮아요</button></div></section>` : ''}
       ${promisesHTML(D)}
       ${installCardHTML()}
+      </div>
     </div>`;
   }
 
@@ -877,14 +904,14 @@
     const wk = weekKey(new Date());
     const weeks = [...new Set(D.goals.map((g) => g.week).concat([wk]))].sort().reverse();
     const shown = weeks.slice(0, weeksShown);
-    return `<div class="stack">${tabs}${finalHeroHTML(D, true)}
+    return `<div class="stack">${tabs}${finalHeroHTML(D, true)}<div class="cards">
       ${shown.map((w) => {
         const gs = weekGoals(D, w); const ws = parseDay(w);
         const total = studyOn(D, w, dayKey(addDays(ws, 6)));
         return `<section class="card" aria-label="${weekLabel(ws)} 목표"><div class="card-head"><h2>${weekLabel(ws)}${w === wk ? ' · 이번 주' : ''}</h2><span class="muted small-text">${gs.length ? `${gs.filter((g) => g.progress >= 100).length}/${gs.length} 달성 · ` : ''}순공 ${fmtHM(total)}</span></div>
           ${gs.length ? gs.map((g) => goalMiniHTML(D, g)).join('') : `<p class="empty">${w === wk ? '이번 주 목표가 아직 없어요.' : '이 주에는 세운 목표가 없어요.'}</p>`}
           ${w === wk ? '<div><button class="btn small" data-act="goal-new">+ 이번 주 목표 추가</button></div>' : ''}</section>`;
-      }).join('')}
+      }).join('')}</div>
       ${weeks.length > shown.length ? '<div><button class="btn small" data-act="more-weeks">이전 목표 더 보기</button></div>' : ''}
     </div>`;
   }
@@ -959,7 +986,7 @@
     for (let i = 0; i < lead; i++) cells += '<div class="day pad" aria-hidden="true"></div>';
     for (let d = 1; d <= days; d++) {
       const k = dayKey(new Date(y, mo, d)); const ms = R.days[k] ? R.days[k].ms : 0;
-      cells += `<button type="button" class="day${k === tk ? ' today' : ''}" data-l="${level(ms)}" data-act="st-day" data-key="${k}" aria-pressed="${k === sel}" aria-label="${mo + 1}월 ${d}일 순공 ${fmtHM(ms)}"><span>${d}</span>${ms ? `<span class="d-min">${fmtShortHM(ms)}</span>` : ''}</button>`;
+      cells += `<button type="button" class="day${k === tk ? ' today' : ''}" data-l="${level(ms)}" data-act="st-goday" data-key="${k}" aria-label="${mo + 1}월 ${d}일 순공 ${fmtHM(ms)}, 그날 기록 보기"><span>${d}</span>${ms ? `<span class="d-min">${fmtShortHM(ms)}</span>` : ''}</button>`;
     }
     return `<div class="cal">${cells}</div>
       <div class="heat-legend" aria-hidden="true"><span>순공</span><i style="background:var(--heat-0)"></i>0 <i style="background:var(--heat-1)"></i>1시간 미만 <i style="background:var(--heat-2)"></i>1~2시간 <i style="background:var(--heat-3)"></i>2~3시간 <i style="background:var(--heat-4)"></i>3시간 이상</div>`;
@@ -1017,6 +1044,7 @@
         <button type="button" data-act="st-mode" data-v="day" aria-pressed="${P.mode === 'day'}">일간</button>
         <button type="button" data-act="st-mode" data-v="week" aria-pressed="${P.mode === 'week'}">주간</button>
         <button type="button" data-act="st-mode" data-v="month" aria-pressed="${P.mode === 'month'}">월간</button></div>
+      ${P.mode === 'day' && st.back ? `<div><button class="btn ghost small" data-act="st-back">‹ ${st.back.mode === 'month' ? '달력으로' : '주간 통계로'} 돌아가기</button></div>` : ''}
       <div class="period-nav"><button class="icon-btn" data-act="st-prev" aria-label="이전 ${P.unit}">‹</button><h2>${P.label}</h2><button class="icon-btn" data-act="st-next" aria-label="다음 ${P.unit}" ${st.offset >= 0 ? 'disabled' : ''}>›</button></div>`;
     if (P.mode === 'day') {
       const dTiles = `<div class="tiles">
@@ -1025,7 +1053,7 @@
         <div class="tile"><span class="label">할 일 달성도</span><span class="value">${R.avgAch == null ? '–' : Math.round(R.avgAch) + '%'}</span>${deltaHTML(R.avgAch, hasPrev ? prev.avgAch : null, 'pt', P.than)}</div>
         <div class="tile"><span class="label">평균 집중도</span><span class="value">${R.avgFocus == null ? '–' : R.avgFocus.toFixed(1)} <small>/ 5</small></span>${deltaHTML(R.avgFocus, hasPrev ? prev.avgFocus : null, 'focus', P.than)}</div>
       </div>`;
-      return `${nav}${dTiles}<section class="card" aria-labelledby="dyH"><div class="card-head"><h2 id="dyH">하루 기록</h2></div>${dayDetailHTML(D, P.a, self)}</section>${R.sessions.length ? subjectsCardHTML(R) + distractorsCardHTML(R) + camCardHTML(R) : ''}`;
+      return `${nav}${dTiles}<div class="cards"><section class="card wide" aria-labelledby="dyH"><div class="card-head"><h2 id="dyH">하루 기록</h2>${st.offset < 0 ? `<button class="btn ghost small" data-act="st-today">오늘로</button>` : ''}</div>${dayDetailHTML(D, P.a, self)}</section>${R.sessions.length ? subjectsCardHTML(R) + hoursCardHTML(R) + distractorsCardHTML(R) + camCardHTML(R) : ''}</div>`;
     }
     if (!R.sessions.length && !goals.length) {
       return `${nav}<section class="card"><h2 style="font-size:16px">이 ${P.unit}에는 공부 기록이 없어요</h2><p class="muted">${self ? '주간 목표를 골라 공부를 시작하고, 끝낼 때 기록을 남기면 여기에 통계가 쌓여요.' : '이 기간에 남긴 기록이 없어요.'}</p>
@@ -1045,10 +1073,10 @@
       const cols = range(0, 6).map((i) => {
         const day = addDays(P.start, i); const k = dayKey(day); const d = R.days[k];
         const segs = d ? R.subjects.filter((x) => d.subj[x.name]).map((x) => ({ name: x.name, slot: x.slot, ms: d.subj[x.name] })) : [];
-        return { key: k, label: WD[day.getDay()], sub: `${day.getMonth() + 1}/${day.getDate()}`, ms: d ? d.ms : 0, segs, sel: k === sel, today: k === tk, act: 'st-day', aria: `${fmtDateLong(day)} 순공 ${fmtHM(d ? d.ms : 0)}` };
+        return { key: k, label: WD[day.getDay()], sub: `${day.getMonth() + 1}/${day.getDate()}`, ms: d ? d.ms : 0, segs, today: k === tk, act: 'st-goday', aria: `${fmtDateLong(day)} 순공 ${fmtHM(d ? d.ms : 0)}, 그날 기록 보기` };
       });
-      timeline = `<section class="card" aria-labelledby="tlH"><div class="card-head"><h2 id="tlH">날짜별 순공</h2><span class="muted small-text">막대를 누르면 그날 기록</span></div>
-        ${vchartHTML(cols, { minMax: 60 * 60000 })}${legendHTML(R.subjects)}${dayDetailHTML(D, sel, self, { goDay: true })}</section>`;
+      timeline = `<section class="card wide" aria-labelledby="tlH"><div class="card-head"><h2 id="tlH">날짜별 순공</h2><span class="muted small-text">막대를 누르면 그날 상세 기록</span></div>
+        ${vchartHTML(cols, { minMax: 60 * 60000 })}${legendHTML(R.subjects)}</section>`;
     } else {
       const wcols = []; let w = weekStart(P.start);
       while (w <= P.end) {
@@ -1057,9 +1085,9 @@
         wcols.push({ key: a, label: `${parseDay(a).getMonth() + 1}/${parseDay(a).getDate()}~`, ms, aria: `${a.slice(5).replace('-', '/')}–${b.slice(5).replace('-', '/')} 순공 ${fmtHM(ms)}`, today: tk >= a && tk <= b });
         w = addDays(w, 7);
       }
-      timeline = `<section class="card" aria-labelledby="clH"><div class="card-head"><h2 id="clH">달력</h2><span class="muted small-text">날짜를 누르면 그날 기록</span></div>
-          ${calendarHTML(P, R, sel)}${dayDetailHTML(D, sel, self, { goDay: true })}</section>
-        <section class="card" aria-labelledby="wkH"><div class="card-head"><h2 id="wkH">주별 순공</h2></div>${vchartHTML(wcols, { minMax: 3600e3, h: 110 })}</section>`;
+      timeline = `<section class="card wide" aria-labelledby="clH"><div class="card-head"><h2 id="clH">달력</h2><span class="muted small-text">날짜를 누르면 그날 상세 기록</span></div>
+          ${calendarHTML(P, R, sel)}</section>
+        <section class="card wide" aria-labelledby="wkH"><div class="card-head"><h2 id="wkH">주별 순공</h2></div>${vchartHTML(wcols, { minMax: 3600e3, h: 110 })}</section>`;
     }
     const gids = new Set(goals.map((g) => g.id));
     const inGoal = sum(R.sessions.filter((s) => gids.has(s.goalId)).map((s) => s.studyMs));
@@ -1074,7 +1102,7 @@
         <p class="muted small-text">제안은 이 앱이 정한 규칙으로 계산한 거예요. 효과가 검증된 처방은 아니니, 나에게 맞는지 다음 기록으로 확인해 보세요.</p></section>${reportAIHTML(P)}` : '';
     const share = self ? `<section class="card" aria-labelledby="shH"><div class="card-head"><h2 id="shH">통계 공유</h2></div><p class="muted small-text">선생님이나 함께 공부하는 친구에게 이 ${P.unit}의 기록을 보여 주고 싶을 때 보내세요.</p>
         <div><button class="btn" data-act="share-report">${navigator.share ? '요약 보내기' : '요약 텍스트 복사'}</button></div></section>` : '';
-    return `${nav}${tiles}${timeline}${goalsCard}${suggCard}${subjectsCardHTML(R)}${hoursCardHTML(R)}${bucketsCardHTML(R)}${accuracyCardHTML(R)}${distractorsCardHTML(R)}${camCardHTML(R)}${share}`;
+    return `${nav}${tiles}<div class="cards">${timeline}${goalsCard}${suggCard}${subjectsCardHTML(R)}${hoursCardHTML(R)}${bucketsCardHTML(R)}${accuracyCardHTML(R)}${distractorsCardHTML(R)}${camCardHTML(R)}${share}</div>`;
   }
   function statsPageHTML() { return `<div class="stack">${statsHTML(state, stat, true)}</div>`; }
   function reportText() {
@@ -1203,11 +1231,11 @@
   }
   function mentorHTML() {
     const D = state; const p = D.meta.prefs;
-    if (p.phase === 'A') return '<div class="stack"><section class="card"><h2 style="font-size:16px">실험 A주에는 멘토를 쉬어요</h2><p>A주는 피드백 없이 기록만 하는 주라서 AI 멘토도 쓰지 않아요. 내 정보에서 실험 단계를 바꾸면 열려요.</p></section></div>';
-    if (mode === 'demo-student') return `<div class="stack">${mentorExampleHTML('체험 모드에서는 예시 대화만 보여요. 로그인하면 학교 서버를 통해 실제 상담을 할 수 있어요.')}${promisesHTML(D)}</div>`;
-    if (serverInfo.mentor === false) return `<div class="stack">${mentorExampleHTML('운영팀이 학교 서버에 AI 키를 아직 넣지 않아서 지금은 예시 대화만 보여요. 키를 넣으면 이 화면에서 바로 상담이 시작돼요.')}${promisesHTML(D)}</div>`;
+    if (p.phase === 'A') return '<div class="stack narrow"><section class="card"><h2 style="font-size:16px">실험 A주에는 멘토를 쉬어요</h2><p>A주는 피드백 없이 기록만 하는 주라서 AI 멘토도 쓰지 않아요. 내 정보에서 실험 단계를 바꾸면 열려요.</p></section></div>';
+    if (mode === 'demo-student') return `<div class="stack narrow">${mentorExampleHTML('체험 모드에서는 예시 대화만 보여요. 로그인하면 학교 서버를 통해 실제 상담을 할 수 있어요.')}${promisesHTML(D)}</div>`;
+    if (serverInfo.mentor === false) return `<div class="stack narrow">${mentorExampleHTML('운영팀이 학교 서버에 AI 키를 아직 넣지 않아서 지금은 예시 대화만 보여요. 키를 넣으면 이 화면에서 바로 상담이 시작돼요.')}${promisesHTML(D)}</div>`;
     if (!p.mentorConsent) {
-      return `<div class="stack"><section class="card" aria-labelledby="mtCon"><h2 id="mtCon" style="font-size:16px">AI 멘토를 시작하기 전에</h2>
+      return `<div class="stack narrow"><section class="card" aria-labelledby="mtCon"><h2 id="mtCon" style="font-size:16px">AI 멘토를 시작하기 전에</h2>
         <p>멘토는 내 기록을 보고 답해요. 질문할 때마다 아래 내용이 학교 서버를 거쳐 AI 회사(Anthropic)의 서버로 전달돼요.</p>
         <ul class="data-list"><li>최종 목표, 주간 목표와 진행률</li><li>공부 기록: 과목, 할 일, 예상·실제 시간, 할 일 달성도, 집중도, 방해 요인</li><li>카메라가 확인한 자리 비움·졸음 횟수</li><li>성적과 목표 등급, 지난 상담 요약과 약속</li><li>멘토에게 직접 쓴 대화</li></ul>
         <p class="muted small-text">이름, 학번, 공부 메모, 카메라 영상은 보내지 않아요. 대화 내용은 학교 서버에 저장되지 않고, 상담 요약과 약속만 내 계정에 저장돼요(선생님 화면에는 보이지 않아요). AI도 틀릴 수 있으니 중요한 결정은 선생님과 상의하세요.</p>
@@ -1215,7 +1243,7 @@
     }
     const chat = state.chat;
     const past = D.meta.mentorNotes.slice(0, -1).reverse().slice(0, 5);
-    return `<div class="stack">
+    return `<div class="stack narrow">
       <section class="card" aria-labelledby="mtH">
         <div class="card-head"><h2 id="mtH">AI 학습 멘토</h2>${chat.some((m) => m.role === 'user') ? `<button class="btn ghost small" data-act="mentor-finish" ${mentorBusy ? 'disabled' : ''}>상담 마무리</button>` : ''}</div>
         <div class="chat" id="chatLog">
@@ -1270,7 +1298,7 @@
   function meHTML() {
     const D = state; const p = D.meta.prefs; const u = mode === 'student' ? auth.user : null;
     const sub = D.meta.subjects;
-    return `<div class="stack">
+    return `<div class="masonry">
       <section class="card account" aria-label="내 계정">
         <div class="avatar" aria-hidden="true">${esc((u ? u.name : '체')[0] || '?')}</div>
         <div class="acc-name"><b>${esc(u ? u.name : '체험 학생')}</b><span class="muted small-text">${u ? `${esc(u.studentNo)}${u.cls ? ` · ${esc(u.cls)}반` : ''} · 학생` : '체험 모드 · 기록은 이 기기에만 저장돼요'}</span></div>
@@ -1398,10 +1426,16 @@
     const last = g ? goalSessions(D, g.id).slice(-1)[0] : null;
     const cont = last && last.achieve < 100 && last.plan ? last.plan : '';
     const nm = g ? goalName(D, g) : '';
+    const pick = d.pick ? (() => {
+      const act = weekGoals(D, weekKey(new Date())).filter((x) => x.progress < 100);
+      return `<fieldset><legend>무엇을 공부할까요?</legend><div class="goal-pick">${act.map((x) => { const n2 = goalName(D, x); return `<button type="button" class="gp" data-act="pick-goal" data-v="${x.id}" aria-pressed="${d.goalId === x.id}"><span class="subj"><i class="dot" style="--c:${colorOf(slotOfName(D, n2))}"></i>${esc(n2)}</span><b>${esc(x.title)}</b><span class="muted small-text">${x.progress}%</span></button>`; }).join('')}
+        <button type="button" class="gp" data-act="pick-goal" data-v="" aria-pressed="${!d.goalId}"><b>목표 없이 공부하기</b><span class="muted small-text">과목만 고르고 시작</span></button></div>
+        ${act.length ? '' : '<span class="hint">이번 주 목표를 만들어 두면 목표별로 진행률이 쌓여요.</span>'}</fieldset>`;
+    })() : '';
     return `<form id="startForm" class="sheet-form" novalidate autocomplete="off">
-      <h2 id="sheetTitle">공부 시작</h2>
-      ${g ? `<div class="start-goal">${subjTag(nm, slotOfName(D, nm))}<b>${esc(g.title)}</b><span class="muted small-text">지금 진행률 ${g.progress}% · 이번 주 ${fmtHM(goalMs(D, g.id))} 공부</span></div>`
-        : `<fieldset><legend>과목</legend>${subjChips(D, d.subjectId)}<span class="hint">주간 목표에 없는 공부예요. 통계에는 '목표 없이 한 공부'로 따로 모여요.</span></fieldset>`}
+      <h2 id="sheetTitle">공부 시작</h2>${pick}
+      ${g && !d.pick ? `<div class="start-goal">${subjTag(nm, slotOfName(D, nm))}<b>${esc(g.title)}</b><span class="muted small-text">지금 진행률 ${g.progress}% · 이번 주 ${fmtHM(goalMs(D, g.id))} 공부</span></div>`
+        : g ? '' : `<fieldset><legend>과목</legend>${subjChips(D, d.subjectId)}<span class="hint">주간 목표에 없는 공부예요. 통계에는 '목표 없이 한 공부'로 따로 모여요.</span></fieldset>`}
       <div class="field"><label for="stPlan">이번에 할 일</label><input id="stPlan" type="text" maxlength="40" value="${esc(d.plan)}" placeholder="예: 2단원 문제 15~30번">
         ${cont ? `<div class="chips"><button type="button" class="chip" data-act="use-plan" data-v="${esc(cont)}">지난번 이어서: ${esc(cont)} (${last.achieve}%)</button></div>` : ''}
         <span class="hint">끝낼 때 이 할 일을 몇 % 했는지 5% 단위로 기록해요. 범위까지 적으면 정확해져요.</span></div>
@@ -1711,7 +1745,7 @@
     if (Cam.state === 'on' && Math.floor(now / 500) % 4 === 0) renderCam();
     if (route.page === 'home' && !$('#app').hidden) {
       const N = homeNumbers();
-      const a = $('#stToday'); if (a) a.textContent = fmtHM(N.today);
+      const a = $('#stToday'); if (a) a.textContent = fmtClock(N.today);
       const b = $('#stWeek'); if (b) b.textContent = fmtHM(N.week);
       const f = $('#dayFill'); if (f) f.style.width = Math.min(100, (N.today / N.goalMs) * 100) + '%';
       const t = $('#dayText'); if (t) t.textContent = dayGoalText(N.today, N.goalMs);
@@ -1919,7 +1953,7 @@
     if (!u || u.role !== 'student') return '<div class="stack"><section class="card"><p>학생을 찾을 수 없어요.</p><div><a class="btn small" href="#students">학생 목록으로</a></div></section></div>';
     if (astat.uid !== id) astat = { mode: 'week', offset: 0, sel: null, uid: id };
     const D = admD(id); const wk = weekKey(new Date()); const goals = weekGoals(D, wk);
-    return `<div class="stack" style="max-width:760px;width:100%;margin:0 auto">
+    return `<div class="stack detail-wrap">
       <div><a class="btn ghost small" href="#students">‹ 학생 목록</a></div>
       <section class="card detail-head"><div class="avatar" aria-hidden="true">${esc(u.name[0] || '?')}</div><div class="acc-name"><b>${esc(u.name)}</b><span>${esc(u.studentNo)}${u.cls ? ` · ${esc(u.cls)}반` : ''} · 최근 접속 ${fmtDateTime(u.last)}</span></div>${u.status === 'disabled' ? '<span class="pill bad">정지</span>' : '<span></span>'}</section>
       ${mode === 'admin' && !admin.full[id] ? '<p class="muted small-text">전체 기록을 불러오는 중이에요. 지금은 최근 5주 기록만 보여요.</p>' : ''}
@@ -2078,8 +2112,20 @@
       case 'cam-toggle': camToggle(); break;
       case 'alarm-ok': dismissAlarm(); toast('좋아요. 다시 집중해 봐요.'); break;
       // stats (students and the teacher's student page)
-      case 'st-mode': { const s = curStat(); s.mode = ['day', 'month'].includes(b.dataset.v) ? b.dataset.v : 'week'; s.offset = 0; s.sel = null; renderPage(); break; }
-      case 'st-goday': { const s = curStat(); s.mode = 'day'; s.offset = Math.min(0, daysBetween(dayKey(new Date()), b.dataset.key)); s.sel = null; renderPage(); window.scrollTo(0, 0); break; }
+      case 'st-mode': { const s = curStat(); s.mode = ['day', 'month'].includes(b.dataset.v) ? b.dataset.v : 'week'; s.offset = 0; s.sel = null; s.back = null; renderPage(); break; }
+      case 'st-goday': { const s = curStat(); if (s.mode !== 'day') s.back = { mode: s.mode, offset: s.offset, y: window.scrollY }; s.mode = 'day'; s.offset = Math.min(0, daysBetween(dayKey(new Date()), b.dataset.key)); s.sel = null; renderPage(); window.scrollTo(0, 0); break; }
+      case 'st-back': { const s = curStat(); const bk = s.back; if (!bk) break; s.mode = bk.mode; s.offset = bk.offset; s.back = null; renderPage(); window.scrollTo(0, bk.y || 0); break; }
+      case 'st-today': { const s = curStat(); s.offset = 0; renderPage(); break; }
+      case 'go-today': stat = { mode: 'day', offset: 0, sel: null }; break;
+      case 'go-week': stat = { mode: 'week', offset: 0, sel: null }; break;
+      case 'quick-start': {
+        if (state.running) break;
+        const act = weekGoals(state, weekKey(new Date())).filter((g) => g.progress < 100);
+        const g0 = act[0] || null;
+        openSheet('start', { pick: true, goalId: g0 ? g0.id : null, subjectId: null, plan: '', planMin: lastPlanMin(g0 ? g0.id : null), cam: !!prefs().camAuto });
+        break;
+      }
+      case 'pick-goal': { readSheetInputs(); const d = sheet.draft; d.goalId = b.dataset.v || null; d.planMin = lastPlanMin(d.goalId); d.err = ''; renderSheet(); break; }
       case 'st-prev': { const s = curStat(); s.offset -= 1; s.sel = null; renderPage(); break; }
       case 'st-next': { const s = curStat(); if (s.offset < 0) { s.offset += 1; s.sel = null; renderPage(); } break; }
       case 'st-day': curStat().sel = b.dataset.key; renderPage(); break;
@@ -2214,6 +2260,22 @@
     toast('저장했어요');
   });
   window.addEventListener('hashchange', () => { if (mode !== 'login') renderAll(); });
+  const onStats = () => mode !== 'login' && (route.page === 'stats' || route.page === 'student');
+  function stepPeriod(dir) {
+    const s = curStat();
+    if (dir > 0 && s.offset >= 0) return;
+    s.offset += dir; s.sel = null; renderPage();
+  }
+  let touch0 = null;
+  $('#main').addEventListener('touchstart', (e) => { touch0 = onStats() && !e.target.closest('.table-wrap, .quick, input, textarea, select') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null; }, { passive: true });
+  $('#main').addEventListener('touchend', (e) => {
+    if (!touch0) return; const t = e.changedTouches[0]; const dx = t.clientX - touch0.x; const dy = t.clientY - touch0.y; touch0 = null;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 45) stepPeriod(dx > 0 ? -1 : 1);
+  }, { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (!onStats() || sheet || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || !$('#timer').hidden) return;
+    if (e.key === 'ArrowLeft') stepPeriod(-1); else if (e.key === 'ArrowRight') stepPeriod(1);
+  });
   window.addEventListener('online', () => { renderSync(); scheduleFlush(200); });
   window.addEventListener('offline', renderSync);
   setInterval(() => { if (mode === 'student' && outbox.length && !sync.busy) flush(); }, 60000);
